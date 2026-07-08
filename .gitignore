@@ -1,0 +1,24 @@
+# --- 시크릿 (절대 커밋 금지) ---
+.streamlit/secrets.toml
+*.env
+.env
+credentials*.json
+token*.json
+service-account*.json
+
+# --- 파이썬 ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# --- OS / 에디터 ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- 캐시 / 임시 ---
+.streamlit/cache/
+*.log
