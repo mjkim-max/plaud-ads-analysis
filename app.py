@@ -54,7 +54,7 @@ with tabs[0]:
             labels=list(CHANNEL_MIX), values=list(CHANNEL_MIX.values()), hole=0.5,
             marker_colors=["#22c55e", "#2563eb", "#f59e0b", "#9ca3af"]))
         fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=320)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
         st.caption("도넛은 매출 **출처 비중**이지 광고 효율이 아님. 광고는 자사몰 34%에만 귀인.")
     with g2:
         st.subheader("자사몰 매출 회귀 — 전환 1건당 판매 대수")
@@ -63,7 +63,7 @@ with tabs[0]:
         fig = px.bar(reg, x="판매대수", y="채널", orientation="h", text="판매대수",
                      color="채널", color_discrete_sequence=["#2563eb", "#22c55e", "#f59e0b"])
         fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10), height=320)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
         st.caption("**Google검색 +3.3대**로 건당 효율 최고인데 규모가 작음 = 가장 저평가된 기회.")
 
 # ───────────────────────────── ② 캠페인 병렬 ─────────────────────────
@@ -79,7 +79,7 @@ with tabs[1]:
         barmode="group", height=420, margin=dict(t=20, b=10),
         yaxis=dict(title="신설/종료"), yaxis2=dict(title="동시활성", overlaying="y", side="right"),
         legend=dict(orientation="h", y=1.1))
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
     st.info("동시활성 11 → 30개로 병렬 증설. **동시활성 ↔ CPA = +0.85** — 많이 돌릴수록 학습 낭비로 CPA 상승. "
             "CPM(자가경쟁)이 아니라 학습단계 낭비다(동시활성↔CPM 0.04).")
 
@@ -91,7 +91,7 @@ with tabs[1]:
             fig2.add_bar(x=mt["코호트"].astype(str), y=mt[col] * 100, name=col, marker_color=color)
     fig2.update_layout(barmode="stack", height=360, yaxis_title="비율 (%)", margin=dict(t=20, b=10),
                        legend=dict(orientation="h", y=1.1))
-    st.plotly_chart(fig2, width='stretch')
+    st.plotly_chart(fig2, use_container_width=True)
     st.caption("변곡점 = **4월(양산 시작)**. 6월 단기 75%·장기 6% — 최근 소재가 빨리 죽음. "
                "단, 최근 월은 절단으로 장기%가 과소.")
 
@@ -105,13 +105,13 @@ with tabs[2]:
                      hover_name="캠페인", size="총지출(KRW)", size_max=30,
                      color_discrete_map={"진행중": "#2563eb", "종료": "#9ca3af"})
     fig.update_layout(height=420, margin=dict(t=20, b=10))
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("장수 저CPA 히어로 / 고CPA 낭비 캠페인")
     view = surv[["캠페인", "생존일수", "상태", "총지출(KRW)", "총구매", "CPA(KRW)"]].copy()
     st.dataframe(
         view.sort_values("CPA(KRW)", na_position="last"),
-        width='stretch', hide_index=True,
+        use_container_width=True, hide_index=True,
         column_config={
             "총지출(KRW)": st.column_config.NumberColumn(format="%,d"),
             "CPA(KRW)": st.column_config.NumberColumn(format="%,d"),
