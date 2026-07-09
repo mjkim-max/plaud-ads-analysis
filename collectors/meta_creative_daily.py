@@ -26,6 +26,36 @@ def _month_ranges(since: str, until: str):
         cur = nxt
 
 
+# Meta 레이트리밋 관련 에러코드 (백오프 재시도 대상)
+RATE_LIMIT_CODES = {4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008}
+
+
+def _request(url: str, params: dict) -> dict:
+    """레이트리밋(403/429/5xx/Meta 코드)에 지수 백오프로 대응하는 GET."""
+    for attempt in range(6):
+        r = requests.get(url, params=params, timeout=120)
+        if r.status_code == 200:
+            return r.json()
+        err = {}
+        try:
+            err = r.json().get("error", {}) or {}
+        except Exception:
+            pass
+        code = err.get("code")
+        retryable = (
+            r.status_code in (403, 429, 500, 503)
+            or code in RATE_LIMIT_CODES
+            or "rate limit" in str(err.get("message", "")).lower()
+        )
+        if retryable and attempt < 5:
+            wait = min(60 * (attempt + 1), 300)  # 60→300s
+            print(f"[meta] {r.status_code}/code={code} 레이트리밋 → {wait}s 대기 후 재시도 ({attempt + 1}/5)")
+            time.sleep(wait)
+            continue
+        raise RuntimeError(f"Meta API {r.status_code} code={code} msg={err.get('message')}")
+    raise RuntimeError("Meta API 재시도 소진")
+
+
 def _num(x) -> float:
     try:
         return float(x)
@@ -65,24 +95,13 @@ def fetch_insights(since: str, until: str) -> list[dict]:
 
     rows: list[dict] = []
     while True:
-        payload = None
-        for attempt in range(4):
-            r = requests.get(url, params=params, timeout=120)
-            if r.status_code == 200:
-                payload = r.json()
-                break
-            # 레이트리밋/일시오류 → 지수 백오프 후 재시도
-            if r.status_code in (429, 500, 503) or "throttl" in r.text.lower():
-                time.sleep(2 ** attempt * 5)
-                continue
-            r.raise_for_status()
-        if payload is None:
-            raise RuntimeError(f"Meta API 재시도 실패: {url}")
+        payload = _request(url, params)
         rows.extend(payload.get("data", []))
         nxt = payload.get("paging", {}).get("next")
         if not nxt:
             break
         url, params = nxt, {}  # next URL은 파라미터가 이미 포함됨
+        time.sleep(1)  # 페이지 간 간격 (레이트리밋 예방)
     return rows
 
 
@@ -130,6 +149,7 @@ def run(since: str = "", until: str = "") -> int:
         chunk = fetch_insights(m_since, m_until)
         print(f"[meta]   {m_since}~{m_until}: {len(chunk)}행")
         raw.extend(chunk)
+        time.sleep(2)  # 청크 간 간격 (레이트리밋 예방)
     df = transform(raw)
     print(f"[meta] 지출>0 소재-일 행: {len(df)}")
 
