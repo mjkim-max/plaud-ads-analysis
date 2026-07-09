@@ -40,6 +40,7 @@ def creative_summary(d: pd.DataFrame) -> pd.DataFrame:
         "지출": g["spend"].sum(), "노출": g["impressions"].sum(), "클릭": g["clicks"].sum(),
         "구매_웹": g["purchase"].sum(), "구매_오프": g["offline_purchase"].sum(),
         "구매_전체": g["omni_purchase"].sum(), "광고수": g["ad_id"].nunique(),
+        "캠페인수": g["campaign_name"].nunique(),
         "최초집행": spent.min(), "최종집행": spent.max(), "활성일수": spent.nunique(),
     })
     s["수명일"] = (s["최종집행"] - s["최초집행"]).dt.days + 1
@@ -118,7 +119,7 @@ with tabs[1]:
     st.markdown("**전체 합계** (현재 기간 · 모든 소재)")
     render_totals(df)
     st.divider()
-    disp = cs[["소재", "최초집행", "최종집행", "수명일", "활성일수", "광고수", "노출", "클릭",
+    disp = cs[["소재", "최초집행", "최종집행", "수명일", "활성일수", "광고수", "캠페인수", "노출", "클릭",
                "지출", "구매_웹", "구매_오프", "구매_전체", "CPA", "CTR", "CVR"]].copy()
     disp["최초집행"] = disp["최초집행"].dt.date
     disp["최종집행"] = disp["최종집행"].dt.date
@@ -214,7 +215,7 @@ with tabs[2]:
         st.plotly_chart(f, use_container_width=True)
 
     st.markdown("**이 달 제작 소재 목록**")
-    ct = cs2[cs2["제작월"] == mo][["소재", "최초집행", "최종집행", "수명일", "노출", "클릭",
+    ct = cs2[cs2["제작월"] == mo][["소재", "최초집행", "최종집행", "수명일", "캠페인수", "노출", "클릭",
                                   "지출", "구매_전체", "CPA", "CTR", "CVR"]].copy()
     ct["최초집행"] = ct["최초집행"].dt.date
     ct["최종집행"] = ct["최종집행"].dt.date
