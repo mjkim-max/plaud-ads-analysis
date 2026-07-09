@@ -14,6 +14,8 @@ import requests
 from collectors import config, sheets_io
 
 OAUTH_URL = "https://oauth2.googleapis.com/token"
+# 최신순 — 404(경로없음)면 다음 버전 시도
+CANDIDATE_VERSIONS = ["v21", "v20", "v19", "v18", "v17"]
 
 
 def _access_token() -> str:
@@ -32,8 +34,6 @@ def _access_token() -> str:
 def fetch(since: str, until: str) -> list[dict]:
     if not (config.GADS_DEVELOPER_TOKEN and config.GADS_CUSTOMER_ID):
         raise RuntimeError("GOOGLE_ADS_DEVELOPER_TOKEN / CUSTOMER_ID 환경변수 없음.")
-    url = (f"https://googleads.googleapis.com/{config.GADS_API_VERSION}"
-           f"/customers/{config.GADS_CUSTOMER_ID}/googleAds:searchStream")
     headers = {
         "Authorization": f"Bearer {_access_token()}",
         "developer-token": config.GADS_DEVELOPER_TOKEN,
@@ -46,13 +46,21 @@ def fetch(since: str, until: str) -> list[dict]:
         "metrics.clicks, metrics.cost_micros FROM campaign "
         f"WHERE segments.date BETWEEN '{since}' AND '{until}'"
     )
-    r = requests.post(url, headers=headers, json={"query": query}, timeout=180)
-    if r.status_code != 200:
-        raise RuntimeError(f"Google Ads API {r.status_code}: {r.text[:400]}")
-    results = []
-    for batch in r.json():
-        results.extend(batch.get("results", []))
-    return results
+    # 설정 버전 먼저, 404면 최신순으로 자동 시도
+    versions = [config.GADS_API_VERSION] + [v for v in CANDIDATE_VERSIONS if v != config.GADS_API_VERSION]
+    for ver in versions:
+        url = f"https://googleads.googleapis.com/{ver}/customers/{config.GADS_CUSTOMER_ID}/googleAds:searchStream"
+        r = requests.post(url, headers=headers, json={"query": query}, timeout=180)
+        if r.status_code == 404:
+            continue  # 그 버전 경로 없음 → 다음
+        if r.status_code != 200:
+            raise RuntimeError(f"Google Ads API {r.status_code} (ver {ver}): {r.text[:500]}")
+        print(f"[google] API version {ver} 사용")
+        results = []
+        for batch in r.json():
+            results.extend(batch.get("results", []))
+        return results
+    raise RuntimeError("모든 API 버전에서 404 — 유효한 GOOGLE_ADS_API_VERSION 확인 필요.")
 
 
 def transform(raw: list[dict]) -> pd.DataFrame:
