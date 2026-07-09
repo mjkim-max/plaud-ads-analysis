@@ -37,6 +37,9 @@ if isinstance(rng, tuple) and len(rng) == 2:
     df = df[(df["date"].dt.date >= rng[0]) & (df["date"].dt.date <= rng[1])]
 st.sidebar.caption(f"소재 {df['소재'].nunique()}개 · 광고 {df['ad_name'].nunique()}개 · {len(df):,}행")
 st.sidebar.caption(f"최신 데이터: {max_date.date()}")
+spend_min = st.sidebar.number_input(
+    "검증 최소 지출(₩)", min_value=0, value=1_000_000, step=500_000,
+    help="이 지출 미만 소재는 '기회부족'으로 분류 — 효율 판단 보류(돈을 덜 먹어 신뢰 낮음), 테스트 여지.")
 
 
 @st.cache_data(ttl=1800)
@@ -66,14 +69,18 @@ def creative_summary(d: pd.DataFrame) -> pd.DataFrame:
 
 cs = creative_summary(df)
 active_mask = cs["최종집행"] >= (max_date - pd.Timedelta(days=ACTIVE_WINDOW))
-median_cpa = cs.loc[active_mask & cs["CPA"].notna(), "CPA"].median()
+# 벤치마크 CPA는 '검증된 소재'(활성 & 지출 충분 & 구매 有)만으로 계산
+tested = active_mask & (cs["지출"] >= spend_min) & cs["CPA"].notna()
+median_cpa = cs.loc[tested, "CPA"].median()
 if pd.isna(median_cpa):
-    median_cpa = cs["CPA"].median()
+    median_cpa = cs.loc[cs["CPA"].notna(), "CPA"].median()
 
 
 def headroom(row) -> str:
     if row["최종집행"] < (max_date - pd.Timedelta(days=ACTIVE_WINDOW)):
         return "⚪ 휴면"
+    if row["지출"] < spend_min:
+        return "🔵 기회부족"                      # 돈을 덜 먹음 → 판단 보류·테스트 여지
     if pd.isna(row["CPA"]):
         return "🟡 관망(구매無)"
     return "🟢 증액후보" if row["CPA"] <= median_cpa else "🔴 비효율"
@@ -96,6 +103,8 @@ with tabs[0]:
     c4.metric("활성 소재", f"{int(active_mask.sum())}개", f"전체 {len(cs)}개 중")
     c5.metric("🟢 증액후보", f"{int((cs['집행여력']=='🟢 증액후보').sum())}개", delta_color="off")
 
+    vc = cs["집행여력"].value_counts()
+    st.caption("집행여력 분포 — " + " · ".join(f"{k} {int(v)}" for k, v in vc.items()))
     st.divider()
     g1, g2 = st.columns([3, 2])
     with g1:
@@ -122,10 +131,11 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("소재 단위 성과 — 수명 · 통합 CPA · 추가 집행 여력")
     st.caption(f"광고이름이 아니라 **소재**로 묶어 봄. 활성 = 최근 {ACTIVE_WINDOW}일 내 집행. "
-               f"🟢 증액후보 = 활성 & CPA ≤ 활성소재 중앙값(₩{median_cpa:,.0f}).")
+               f"🟢 증액후보 = 활성 & 검증(지출≥₩{spend_min:,}) & CPA ≤ 검증소재 중앙값(₩{median_cpa:,.0f}) · "
+               f"🔵 기회부족 = 활성이지만 지출<₩{spend_min:,}(돈을 덜 먹어 판단 보류·테스트 여지).")
 
     f1, f2 = st.columns([1, 3])
-    only = f1.selectbox("보기", ["전체", "🟢 증액후보", "🔴 비효율", "⚪ 휴면", "🟡 관망(구매無)"])
+    only = f1.selectbox("보기", ["전체", "🟢 증액후보", "🔵 기회부족", "🔴 비효율", "⚪ 휴면", "🟡 관망(구매無)"])
     view = cs if only == "전체" else cs[cs["집행여력"] == only]
 
     show = view[["소재", "집행여력", "최초집행", "최종집행", "수명일", "활성일수", "광고수",
@@ -152,6 +162,37 @@ with tabs[1]:
                                                        "⚪ 휴면": GRAY, "🟡 관망(구매無)": AMBER})
     fig.update_layout(height=420, margin=dict(t=20, b=10))
     st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.subheader("소재별 효율 추이 — 고갈 진단")
+    opts = cs.sort_values("지출", ascending=False)["소재"].tolist()
+    sel = st.selectbox("소재 선택 (지출순)", opts, index=0)
+    one = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
+        지출=("spend", "sum"), 노출=("impressions", "sum"),
+        클릭=("clicks", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+    one = one[one["지출"] > 0]
+    one["CPA"] = (one["지출"] / one["구매"]).where(one["구매"] > 0)
+    one["CTR"] = (one["클릭"] / one["노출"] * 100).where(one["노출"] > 0)
+    one["CVR"] = (one["구매"] / one["클릭"] * 100).where(one["클릭"] > 0)
+
+    d1, d2 = st.columns(2)
+    with d1:
+        fig = go.Figure()
+        fig.add_bar(x=one["date"], y=one["지출"], name="지출", marker_color="#bfdbfe")
+        fig.add_scatter(x=one["date"], y=one["CPA"], name="CPA", mode="lines+markers",
+                        line=dict(color=RED, width=3), yaxis="y2")
+        fig.update_layout(height=320, margin=dict(t=30, b=10), title=f"{sel} — 주별 지출 vs CPA",
+                          yaxis=dict(title="지출"), yaxis2=dict(title="CPA", overlaying="y", side="right"),
+                          legend=dict(orientation="h", y=1.15))
+        st.plotly_chart(fig, use_container_width=True)
+    with d2:
+        fig2 = go.Figure()
+        fig2.add_scatter(x=one["date"], y=one["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE))
+        fig2.add_scatter(x=one["date"], y=one["CVR"], name="CVR%", mode="lines+markers", line=dict(color=GREEN))
+        fig2.update_layout(height=320, margin=dict(t=30, b=10), title=f"{sel} — 주별 CTR / CVR (고갈 신호)",
+                           yaxis_title="%", legend=dict(orientation="h", y=1.15))
+        st.plotly_chart(fig2, use_container_width=True)
+    st.caption("CTR·CVR이 우하향하거나 CPA가 우상향하면 **소재 고갈(피로)** 신호 → 교체·리프레시 시점.")
 
 # ─────────────────────────── ③ 메타 효율 추이 ───────────────────────────
 with tabs[2]:
