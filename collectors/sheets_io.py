@@ -57,6 +57,25 @@ def read_tab(tab: str, cols: list[str]) -> pd.DataFrame:
     return df if not df.empty else pd.DataFrame(columns=cols)
 
 
+def write_tab(df: pd.DataFrame, tab: str, cols: list[str]) -> int:
+    """탭을 헤더+데이터로 전체 교체 (clear 후 write)."""
+    ws = _worksheet(tab, cols)
+    df = df.reindex(columns=cols).where(pd.notna(df.reindex(columns=cols)), "")
+    ws.clear()
+    ws.update([cols] + df.astype(object).values.tolist(), "A1")
+    return len(df)
+
+
+def append_rows(rows: list[dict], tab: str, cols: list[str]) -> int:
+    """탭 끝에 행 추가 (덮어쓰지 않음). 기존 매핑 보존용."""
+    if not rows:
+        return 0
+    ws = _worksheet(tab, cols)
+    values = [["" if r.get(c) is None else r.get(c) for c in cols] for r in rows]
+    ws.append_rows(values, value_input_option="RAW")
+    return len(rows)
+
+
 def upsert_by_date(df_new: pd.DataFrame, tab: str, cols: list[str], date_col: str = "date"):
     """df_new에 포함된 date 값들의 기존 행을 지우고 새로 채운 뒤 전체를 다시 쓴다.
 

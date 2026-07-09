@@ -35,10 +35,14 @@ PURCHASE_OBJECTIVES = {"OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES"}
 
 # 탭 이름
 TAB_META_CREATIVE_DAILY = "meta_소재일별"
+TAB_CREATIVE_MAP = "소재매핑"
 
 META_CREATIVE_DAILY_COLUMNS = [
-    "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name",
+    "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재",
     "spend", "impressions", "clicks", "link_clicks",
     "purchase", "offline_purchase", "omni_purchase", "revenue",
     "ctr", "cvr", "cpa", "cpm",
 ]
+
+# 소재매핑 탭: 광고이름 → 소재(정규명) + 분류방식(수동/자동)
+CREATIVE_MAP_COLUMNS = ["광고이름", "소재", "분류방식"]

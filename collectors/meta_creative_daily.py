@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import requests
 
-from collectors import config, sheets_io
+from collectors import config, creative_mapping, sheets_io
 
 GRAPH = "https://graph.facebook.com"
 
@@ -173,6 +173,14 @@ def run(since: str = "", until: str = "") -> int:
         time.sleep(2)  # 청크 간 간격 (레이트리밋 예방)
     df = transform(raw)
     print(f"[meta] 최종 적재 대상 행: {len(df)}")
+
+    # 광고이름 → 소재(정규명) 매핑. 신규 광고는 자동분류 후 소재매핑 탭에 등록.
+    mp = creative_mapping.load_map()
+    df["소재"], new_rows = creative_mapping.assign(df["ad_name"].tolist(), mp)
+    if new_rows:
+        sheets_io.append_rows(new_rows, config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
+        print(f"[meta] 신규 소재매핑 {len(new_rows)}건 자동등록(분류방식=자동)")
+    print(f"[meta] 소재매핑 적용: 수동 {len(mp)}건 기준, distinct 소재 {df['소재'].nunique()}개")
 
     total = sheets_io.upsert_by_date(
         df, config.TAB_META_CREATIVE_DAILY, config.META_CREATIVE_DAILY_COLUMNS)
