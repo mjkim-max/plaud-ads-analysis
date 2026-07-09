@@ -90,10 +90,11 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-tabs = st.tabs(["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석"])
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석"]
+view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
-with tabs[0]:
+if view == VIEWS[0]:
     tot_spend, tot_omni = df["spend"].sum(), df["omni_purchase"].sum()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("총 지출", f"₩{tot_spend/1e8:.2f}억")
@@ -112,7 +113,7 @@ with tabs[0]:
     st.plotly_chart(fig, use_container_width=True)
 
 # ─────────────────────────── ② 월별 소재 컨디션 ───────────────────────────
-with tabs[1]:
+elif view == VIEWS[1]:
     st.subheader("월별 소재 컨디션")
     st.caption(f"제작월별 만든 소재 수 · 현재 LIVE 수 · 평균수명 · 성과 합계. (LIVE = 최근 {LIVE_DAYS}일 내 집행)")
     csm = cs.copy()
@@ -159,7 +160,7 @@ with tabs[1]:
         st.plotly_chart(f, use_container_width=True)
 
 # ─────────────────────────── ③ 제작월별 진단 ───────────────────────────
-with tabs[2]:
+elif view == VIEWS[2]:
     st.subheader("제작월별 소재 진단")
     cs2 = cs.copy()
     cs2["제작월"] = cs2["최초집행"].dt.to_period("M").astype(str)
@@ -216,7 +217,7 @@ with tabs[2]:
             ctr_cvr_chart(one, "주별 CTR / CVR", "drl_cc")
 
 # ─────────────────────────── ④ 메타 효율 추이 ───────────────────────────
-with tabs[3]:
+elif view == VIEWS[3]:
     st.subheader("메타 효율 시계열")
     freq_label = st.radio("주기", ["일", "주", "월"], horizontal=True, index=1, key="eff_freq")
     freq = {"일": "D", "주": "W-MON", "월": "MS"}[freq_label]
@@ -243,7 +244,7 @@ with tabs[3]:
         st.plotly_chart(f, use_container_width=True)
 
 # ─────────────────────────── ⑤ 소재 생존·품질 ───────────────────────────
-with tabs[4]:
+elif view == VIEWS[4]:
     st.subheader("소재 생존곡선 (수명 ≥ N일 비율)")
     life = cs["수명일"].dropna()
     ks = list(range(0, int(min(life.max(), 180)) + 1, 3)) if len(life) else [0]
@@ -272,7 +273,7 @@ with tabs[4]:
         st.plotly_chart(f, use_container_width=True)
 
 # ─────────────────────────── ⑥ 구글×메타 교차분석 ───────────────────────────
-with tabs[5]:
+elif view == VIEWS[5]:
     st.subheader("구글 디멘드젠 → 메타 효율 (교차분석)")
     st.caption("가설: 구글 디멘드젠 노출·클릭 ↑ → 메타 CTR·CVR ↑. 주 단위로 검증. "
                "(상관 ≠ 인과 — 같은 시기 소재 변화 등 교란 가능)")
