@@ -138,16 +138,20 @@ with tabs[1]:
     only = f1.selectbox("보기", ["전체", "🟢 증액후보", "🔵 기회부족", "🔴 비효율", "⚪ 휴면", "🟡 관망(구매無)"])
     view = cs if only == "전체" else cs[cs["집행여력"] == only]
 
-    show = view[["소재", "집행여력", "최초집행", "최종집행", "수명일", "활성일수", "광고수",
+    disp = view[["소재", "집행여력", "최초집행", "최종집행", "수명일", "활성일수", "광고수",
                  "지출", "구매_웹", "구매_오프", "구매_전체", "CPA", "CTR", "CVR"]].copy()
-    show["최초집행"] = show["최초집행"].dt.date
-    show["최종집행"] = show["최종집행"].dt.date
-    show["CTR"] = show["CTR"] * 100
-    show["CVR"] = show["CVR"] * 100
-    show["지출"] = show["지출"].round(0)
-    show["CPA"] = show["CPA"].round(0)
-    st.dataframe(
-        show.sort_values("지출", ascending=False), use_container_width=True, hide_index=True, height=420,
+    disp["최초집행"] = disp["최초집행"].dt.date
+    disp["최종집행"] = disp["최종집행"].dt.date
+    disp["CTR"] = disp["CTR"] * 100
+    disp["CVR"] = disp["CVR"] * 100
+    disp["지출"] = disp["지출"].round(0)
+    disp["CPA"] = disp["CPA"].round(0)
+    disp = disp.sort_values("지출", ascending=False).reset_index(drop=True)
+
+    st.caption("👇 표에서 **소재 행을 클릭**하면 아래에 그 소재의 효율 추이가 나옵니다. (검색·정렬 가능)")
+    event = st.dataframe(
+        disp, use_container_width=True, hide_index=True, height=420,
+        on_select="rerun", selection_mode="single-row", key="creative_table",
         column_config={
             "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
             "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
@@ -155,6 +159,47 @@ with tabs[1]:
             "CVR": st.column_config.NumberColumn(format="%.2f%%"),
         })
 
+    try:
+        raw_rows = event.selection["rows"]
+    except Exception:
+        raw_rows = []
+    sel_rows = [r for r in (raw_rows or []) if r < len(disp)]
+    sel = disp.iloc[sel_rows[0]]["소재"] if sel_rows else (disp.iloc[0]["소재"] if len(disp) else None)
+
+    # ── 선택 소재 효율 추이 (고갈 진단) ──
+    if sel is not None:
+        st.divider()
+        st.subheader(f"소재별 효율 추이 — 고갈 진단 · {sel}")
+        one = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
+            지출=("spend", "sum"), 노출=("impressions", "sum"),
+            클릭=("clicks", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+        one = one[one["지출"] > 0]
+        one["CPA"] = (one["지출"] / one["구매"]).where(one["구매"] > 0)
+        one["CTR"] = (one["클릭"] / one["노출"] * 100).where(one["노출"] > 0)
+        one["CVR"] = (one["구매"] / one["클릭"] * 100).where(one["클릭"] > 0)
+
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown("**주별 지출 vs CPA**")
+            fig = go.Figure()
+            fig.add_bar(x=one["date"], y=one["지출"], name="지출", marker_color="#bfdbfe")
+            fig.add_scatter(x=one["date"], y=one["CPA"], name="CPA", mode="lines+markers",
+                            line=dict(color=RED, width=3), yaxis="y2")
+            fig.update_layout(height=320, margin=dict(t=44, b=10),
+                              yaxis=dict(title="지출"), yaxis2=dict(title="CPA", overlaying="y", side="right"),
+                              legend=dict(orientation="h", y=1.14, x=0))
+            st.plotly_chart(fig, use_container_width=True)
+        with d2:
+            st.markdown("**주별 CTR / CVR (고갈 신호)**")
+            fig2 = go.Figure()
+            fig2.add_scatter(x=one["date"], y=one["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE))
+            fig2.add_scatter(x=one["date"], y=one["CVR"], name="CVR%", mode="lines+markers", line=dict(color=GREEN))
+            fig2.update_layout(height=320, margin=dict(t=44, b=10), yaxis_title="%",
+                               legend=dict(orientation="h", y=1.14, x=0))
+            st.plotly_chart(fig2, use_container_width=True)
+        st.caption("CTR·CVR이 우하향하거나 CPA가 우상향하면 **소재 고갈(피로)** 신호 → 교체·리프레시 시점.")
+
+    st.divider()
     st.subheader("수명 vs 통합 CPA (버블 = 지출)")
     plot = cs[(cs["구매_전체"] > 0) & (cs["수명일"].notna())]
     fig = px.scatter(plot, x="수명일", y="CPA", size="지출", color="집행여력", hover_name="소재",
@@ -162,37 +207,6 @@ with tabs[1]:
                                                        "⚪ 휴면": GRAY, "🟡 관망(구매無)": AMBER})
     fig.update_layout(height=420, margin=dict(t=20, b=10))
     st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-    st.subheader("소재별 효율 추이 — 고갈 진단")
-    opts = cs.sort_values("지출", ascending=False)["소재"].tolist()
-    sel = st.selectbox("소재 선택 (지출순)", opts, index=0)
-    one = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
-        지출=("spend", "sum"), 노출=("impressions", "sum"),
-        클릭=("clicks", "sum"), 구매=("omni_purchase", "sum")).reset_index()
-    one = one[one["지출"] > 0]
-    one["CPA"] = (one["지출"] / one["구매"]).where(one["구매"] > 0)
-    one["CTR"] = (one["클릭"] / one["노출"] * 100).where(one["노출"] > 0)
-    one["CVR"] = (one["구매"] / one["클릭"] * 100).where(one["클릭"] > 0)
-
-    d1, d2 = st.columns(2)
-    with d1:
-        fig = go.Figure()
-        fig.add_bar(x=one["date"], y=one["지출"], name="지출", marker_color="#bfdbfe")
-        fig.add_scatter(x=one["date"], y=one["CPA"], name="CPA", mode="lines+markers",
-                        line=dict(color=RED, width=3), yaxis="y2")
-        fig.update_layout(height=320, margin=dict(t=30, b=10), title=f"{sel} — 주별 지출 vs CPA",
-                          yaxis=dict(title="지출"), yaxis2=dict(title="CPA", overlaying="y", side="right"),
-                          legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig, use_container_width=True)
-    with d2:
-        fig2 = go.Figure()
-        fig2.add_scatter(x=one["date"], y=one["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE))
-        fig2.add_scatter(x=one["date"], y=one["CVR"], name="CVR%", mode="lines+markers", line=dict(color=GREEN))
-        fig2.update_layout(height=320, margin=dict(t=30, b=10), title=f"{sel} — 주별 CTR / CVR (고갈 신호)",
-                           yaxis_title="%", legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig2, use_container_width=True)
-    st.caption("CTR·CVR이 우하향하거나 CPA가 우상향하면 **소재 고갈(피로)** 신호 → 교체·리프레시 시점.")
 
 # ─────────────────────────── ③ 메타 효율 추이 ───────────────────────────
 with tabs[2]:
