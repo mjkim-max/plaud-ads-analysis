@@ -4,6 +4,7 @@
 - Cloud: st.secrets['gcp_service_account'] + st.secrets['sheet_id']
 - 로컬 개발: env GOOGLE_APPLICATION_CREDENTIALS + PLAUD_SHEET_ID
 """
+import json
 import os
 from pathlib import Path
 
@@ -22,26 +23,50 @@ NUMERIC_COLS = ["spend", "impressions", "clicks", "link_clicks",
                 "ctr", "cvr", "cpa", "cpm"]
 
 
+# 서비스계정을 담을 수 있는 secrets 섹션 이름 후보 (사용자 관례 우선)
+SA_SECRET_KEYS = ("google_sheets_service_account", "gcp_service_account")
+
+
+def _sa_info(val) -> dict:
+    """secrets 값 → 서비스계정 dict. TOML 테이블/단일 JSON 문자열 모두 허용."""
+    if isinstance(val, str):
+        return json.loads(val)
+    d = dict(val)
+    if "type" not in d and len(d) == 1:
+        only = next(iter(d.values()))
+        if isinstance(only, str):
+            return json.loads(only)
+    return d
+
+
 def _gs_client() -> gspread.Client:
-    try:
-        info = dict(st.secrets["gcp_service_account"])
+    for key in SA_SECRET_KEYS:
+        try:
+            info = _sa_info(st.secrets[key])
+        except Exception:
+            continue
         creds = Credentials.from_service_account_info(info, scopes=GS_SCOPES)
-    except Exception:
-        path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not path:
-            raise RuntimeError("서비스계정 자격증명 없음 (st.secrets 또는 GOOGLE_APPLICATION_CREDENTIALS).")
-        creds = Credentials.from_service_account_file(path, scopes=GS_SCOPES)
+        return gspread.authorize(creds)
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not path:
+        raise RuntimeError("서비스계정 자격증명 없음 "
+                           "(st.secrets['google_sheets_service_account'] 또는 GOOGLE_APPLICATION_CREDENTIALS).")
+    creds = Credentials.from_service_account_file(path, scopes=GS_SCOPES)
     return gspread.authorize(creds)
 
 
 def _sheet_id() -> str:
-    try:
-        return st.secrets["sheet_id"]
-    except Exception:
-        sid = os.environ.get("PLAUD_SHEET_ID")
-        if not sid:
-            raise RuntimeError("SHEET_ID 없음 (st.secrets['sheet_id'] 또는 PLAUD_SHEET_ID).")
-        return sid
+    for key in ("sheet_id", "SHEET_ID"):
+        try:
+            v = st.secrets[key]
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        except Exception:
+            continue
+    sid = os.environ.get("PLAUD_SHEET_ID")
+    if not sid:
+        raise RuntimeError("SHEET_ID 없음 — st.secrets에 top-level `sheet_id = \"...\"` 를 추가하세요.")
+    return sid
 
 
 @st.cache_data(ttl=1800)
