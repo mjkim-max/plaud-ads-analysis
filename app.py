@@ -352,40 +352,51 @@ elif view == VIEWS[6]:
     st.subheader("제작월 × 집행월 매트릭스")
     st.caption("행=제작월(소재 만든 달) · 열=집행월 · 셀=선택 지표 · 합계 포함. "
                "(제작 이전 집행은 없어 상삼각은 비어있음)")
-    metric = st.selectbox("지표", ["노출", "클릭", "전환", "지출", "CPM", "CPC", "CVR", "CPA"], key="mx_metric")
+    metric = st.selectbox("지표", ["소재수", "노출", "클릭", "전환", "지출", "CPM", "CPC", "CVR", "CPA"], key="mx_metric")
 
     prod = cs.set_index("소재")["최초집행"].dt.to_period("M").astype(str)
     base = df.copy()
     base["제작월"] = base["소재"].map(prod)
     base["집행월"] = base["date"].dt.to_period("M").astype(str)
     base = base.dropna(subset=["제작월"])
-    gb = base.groupby(["제작월", "집행월"]).agg(
-        노출=("impressions", "sum"), 클릭=("clicks", "sum"),
-        전환=("omni_purchase", "sum"), 지출=("spend", "sum"))
     months = sorted(set(base["제작월"]) | set(base["집행월"]))
-    P = {k: gb[k].unstack("집행월").reindex(index=months, columns=months).fillna(0)
-         for k in ["노출", "클릭", "전환", "지출"]}
 
-    def _safe(num, den):
-        if isinstance(den, (pd.Series, pd.DataFrame)):
-            return (num / den).where(den > 0)
-        return (num / den) if den else float("nan")
+    if metric == "소재수":
+        # 셀 = 그 (제작월 코호트)에서 그 집행월에 켜져있던(지출>0) 소재 수
+        act = base[base["spend"] > 0]
+        mat = act.groupby(["제작월", "집행월"])["소재"].nunique().unstack("집행월").reindex(index=months, columns=months)
+        row_tot = act.groupby("제작월")["소재"].nunique().reindex(months)   # 코호트 전체 소재수(고유)
+        col_tot = act.groupby("집행월")["소재"].nunique().reindex(months)   # 그 달 켜진 소재수(고유)
+        grand = act["소재"].nunique()
+        mat["합계"] = row_tot
+        col_tot["합계"] = grand
+        mat.loc["합계"] = col_tot
+    else:
+        gb = base.groupby(["제작월", "집행월"]).agg(
+            노출=("impressions", "sum"), 클릭=("clicks", "sum"),
+            전환=("omni_purchase", "sum"), 지출=("spend", "sum"))
+        P = {k: gb[k].unstack("집행월").reindex(index=months, columns=months).fillna(0)
+             for k in ["노출", "클릭", "전환", "지출"]}
 
-    def _mfn(imp, clk, conv, sp):
-        return {"노출": imp, "클릭": clk, "전환": conv, "지출": sp,
-                "CPM": _safe(sp * 1000, imp), "CPC": _safe(sp, clk),
-                "CVR": _safe(conv * 100, clk), "CPA": _safe(sp, conv)}[metric]
+        def _safe(num, den):
+            if isinstance(den, (pd.Series, pd.DataFrame)):
+                return (num / den).where(den > 0)
+            return (num / den) if den else float("nan")
 
-    mat = _mfn(P["노출"], P["클릭"], P["전환"], P["지출"])
-    empty = (P["노출"] + P["클릭"] + P["전환"] + P["지출"]) == 0
-    mat = mat.mask(empty)
-    row_tot = _mfn(P["노출"].sum(1), P["클릭"].sum(1), P["전환"].sum(1), P["지출"].sum(1))
-    col_tot = _mfn(P["노출"].sum(0), P["클릭"].sum(0), P["전환"].sum(0), P["지출"].sum(0))
-    grand = _mfn(P["노출"].values.sum(), P["클릭"].values.sum(),
-                 P["전환"].values.sum(), P["지출"].values.sum())
-    mat["합계"] = row_tot
-    col_tot["합계"] = grand
-    mat.loc["합계"] = col_tot
+        def _mfn(imp, clk, conv, sp):
+            return {"노출": imp, "클릭": clk, "전환": conv, "지출": sp,
+                    "CPM": _safe(sp * 1000, imp), "CPC": _safe(sp, clk),
+                    "CVR": _safe(conv * 100, clk), "CPA": _safe(sp, conv)}[metric]
+
+        mat = _mfn(P["노출"], P["클릭"], P["전환"], P["지출"])
+        mat = mat.mask((P["노출"] + P["클릭"] + P["전환"] + P["지출"]) == 0)
+        row_tot = _mfn(P["노출"].sum(1), P["클릭"].sum(1), P["전환"].sum(1), P["지출"].sum(1))
+        col_tot = _mfn(P["노출"].sum(0), P["클릭"].sum(0), P["전환"].sum(0), P["지출"].sum(0))
+        grand = _mfn(P["노출"].values.sum(), P["클릭"].values.sum(),
+                     P["전환"].values.sum(), P["지출"].values.sum())
+        mat["합계"] = row_tot
+        col_tot["합계"] = grand
+        mat.loc["합계"] = col_tot
     def _cell(v):
         if pd.isna(v):
             return ""
