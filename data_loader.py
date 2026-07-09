@@ -70,8 +70,22 @@ def _sheet_id() -> str:
 
 
 @st.cache_data(ttl=1800)
+def _excluded_ad_names() -> list:
+    """소재매핑에서 분류방식='제외'인 광고이름 (대시보드에서 숨김)."""
+    try:
+        ws = _gs_client().open_by_key(_sheet_id()).worksheet("소재매핑")
+        m = pd.DataFrame(ws.get_all_records())
+        if m.empty or "분류방식" not in m.columns:
+            return []
+        hidden = m.loc[m["분류방식"].astype(str).str.strip() == "제외", "광고이름"]
+        return hidden.astype(str).str.strip().tolist()
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=1800)
 def load_meta_daily() -> pd.DataFrame:
-    """meta_소재일별 (라이브). 소재 단위 분석의 원천."""
+    """meta_소재일별 (라이브). 소재 단위 분석의 원천. 제외 광고이름은 숨김."""
     ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")
     df = pd.DataFrame(ws.get_all_records())
     if df.empty:
@@ -84,7 +98,11 @@ def load_meta_daily() -> pd.DataFrame:
     for c in ["campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재"]:
         if c in df.columns:
             df[c] = df[c].astype(str)
-    return df.dropna(subset=["date"])
+    df = df.dropna(subset=["date"])
+    ex = set(_excluded_ad_names())
+    if ex:
+        df = df[~df["ad_name"].str.strip().isin(ex)]
+    return df
 
 
 @st.cache_data(ttl=3600)
