@@ -34,7 +34,7 @@ REVENUE_TYPES = ["omni_purchase", "offsite_conversion.fb_pixel_purchase", "purch
 PURCHASE_OBJECTIVES = {"OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES"}
 
 # ── Google Ads API ──
-GADS_API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "v18")
+GADS_API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "v21")
 GADS_DEVELOPER_TOKEN = os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", "")
 GADS_CLIENT_ID = os.environ.get("GOOGLE_ADS_CLIENT_ID", "")
 GADS_CLIENT_SECRET = os.environ.get("GOOGLE_ADS_CLIENT_SECRET", "")
