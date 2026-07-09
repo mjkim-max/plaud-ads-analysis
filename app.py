@@ -90,7 +90,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-tabs = st.tabs(["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질"])
+tabs = st.tabs(["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석"])
 
 # ─────────────────────────── ① 개요 ───────────────────────────
 with tabs[0]:
@@ -270,3 +270,78 @@ with tabs[4]:
                    color_discrete_map={"단기≤14": "#fca5a5", "중기15-29": "#fde047", "장기≥30": GREEN})
         f.update_layout(height=320, margin=dict(t=20, b=10), yaxis_title="소재 수")
         st.plotly_chart(f, use_container_width=True)
+
+# ─────────────────────────── ⑥ 구글×메타 교차분석 ───────────────────────────
+with tabs[5]:
+    st.subheader("구글 디멘드젠 → 메타 효율 (교차분석)")
+    st.caption("가설: 구글 디멘드젠 노출·클릭 ↑ → 메타 CTR·CVR ↑. 주 단위로 검증. "
+               "(상관 ≠ 인과 — 같은 시기 소재 변화 등 교란 가능)")
+    try:
+        g = dl.load_google_daily()
+    except Exception:
+        g = pd.DataFrame()
+    if g.empty or "channel" not in g.columns:
+        st.warning("google_일별(채널 포함) 데이터가 아직 없습니다. 수집 후 표시됩니다.")
+    else:
+        if isinstance(rng, tuple) and len(rng) == 2:
+            g = g[(g["date"].dt.date >= rng[0]) & (g["date"].dt.date <= rng[1])]
+        chan_map = {"디멘드젠": ["DEMAND_GEN", "DISCOVERY"], "PMax": ["PERFORMANCE_MAX"],
+                    "검색": ["SEARCH"], "디스플레이": ["DISPLAY"], "동영상": ["VIDEO"]}
+        cc = st.columns(4)
+        gch = cc[0].selectbox("구글 채널", list(chan_map) + ["전체 구글"], index=0)
+        gmet = cc[1].selectbox("구글 지표", ["노출", "클릭", "비용"], index=0)
+        mmet = cc[2].selectbox("메타 지표", ["CVR", "CTR", "CPA"], index=0)
+        lag = cc[3].selectbox("구글 선행(주)", [0, 1, 2], index=0,
+                              help="구글 지표를 N주 앞선 값으로 메타와 맞춤(선행효과 확인).")
+
+        gcol = {"노출": "impressions", "클릭": "clicks", "비용": "cost"}[gmet]
+        gg = g if gch == "전체 구글" else g[g["channel"].isin(chan_map[gch])]
+        gw = gg.set_index("date").resample("W-MON").agg(구글=(gcol, "sum")).reset_index()
+        mw = df.set_index("date").resample("W-MON").agg(
+            imp=("impressions", "sum"), clk=("clicks", "sum"),
+            omni=("omni_purchase", "sum"), sp=("spend", "sum")).reset_index()
+        mw["CTR"] = (mw["clk"] / mw["imp"] * 100).where(mw["imp"] > 0)
+        mw["CVR"] = (mw["omni"] / mw["clk"] * 100).where(mw["clk"] > 0)
+        mw["CPA"] = (mw["sp"] / mw["omni"]).where(mw["omni"] > 0)
+        merged = pd.merge(gw, mw[["date", "CTR", "CVR", "CPA"]], on="date", how="inner").sort_values("date")
+        merged["_g"] = merged["구글"].shift(lag)
+        merged["_m"] = merged[mmet]
+        d = merged.dropna(subset=["_g", "_m"])
+
+        if len(d) < 3:
+            st.info("겹치는 주간 데이터가 부족합니다.")
+        else:
+            level_r = d["_g"].corr(d["_m"])
+            chg_r = d["_g"].diff().corr(d["_m"].diff())
+            k1, k2, k3 = st.columns(3)
+            k1.metric("수준 상관", f"{level_r:+.2f}")
+            k2.metric("증감 상관", f"{chg_r:+.2f}", help="전주 대비 변화끼리 — 인과 판단은 이걸 더 신뢰")
+            k3.metric("겹친 주", f"{len(d)}주")
+
+            strength = "강함" if abs(chg_r) >= 0.5 else ("약함" if abs(chg_r) >= 0.3 else "거의 없음")
+            note = f"디멘드젠 {gmet}과 메타 {mmet}의 **증감상관 {chg_r:+.2f}** ({strength})."
+            if mmet == "CPA":
+                note += " CPA는 낮을수록 좋음 → **음(−)이면 디멘드젠이 CPA 개선**에 도움."
+            st.info(note + " · 상관≠인과: 같은 주 소재 변화 등 교란 가능.")
+
+            st.markdown(f"**주별 — 구글 {gch} {gmet} vs 메타 {mmet}**")
+            f = go.Figure()
+            f.add_bar(x=merged["date"], y=merged["구글"], name=f"구글 {gmet}", marker_color="#c7d2fe")
+            f.add_scatter(x=merged["date"], y=merged[mmet], name=f"메타 {mmet}", mode="lines+markers",
+                          line=dict(color=RED, width=3), yaxis="y2")
+            f.update_layout(height=380, margin=dict(t=30, b=10), yaxis=dict(title=f"구글 {gmet}"),
+                            yaxis2=dict(title=f"메타 {mmet}", overlaying="y", side="right"),
+                            legend=dict(orientation="h", y=1.12))
+            st.plotly_chart(f, use_container_width=True, key="cross_ts")
+
+            st.markdown(f"**산점도 — 구글 {gmet}(선행 {lag}주) vs 메타 {mmet}**")
+            sc = px.scatter(d, x="_g", y="_m", color_discrete_sequence=[BLUE])
+            if d["_g"].var() > 0:
+                slope = d["_g"].cov(d["_m"]) / d["_g"].var()
+                intercept = d["_m"].mean() - slope * d["_g"].mean()
+                xs = [d["_g"].min(), d["_g"].max()]
+                sc.add_scatter(x=xs, y=[slope * x + intercept for x in xs], mode="lines",
+                               line=dict(color=RED), name="추세")
+            sc.update_layout(height=380, margin=dict(t=20, b=10),
+                             xaxis_title=f"구글 {gmet}", yaxis_title=f"메타 {mmet}")
+            st.plotly_chart(sc, use_container_width=True, key="cross_sc")

@@ -114,6 +114,26 @@ def load_meta_daily() -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=300)
+def load_google_daily() -> pd.DataFrame:
+    """google_일별 (캠페인×일자 노출·클릭·비용·채널). 없으면 빈 DF."""
+    try:
+        ws = _gs_client().open_by_key(_sheet_id()).worksheet("google_일별")
+    except Exception:
+        return pd.DataFrame()
+    df = pd.DataFrame(ws.get_all_records())
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    for c in ["impressions", "clicks", "cost"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    for c in ["campaign_name", "channel"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str)
+    return df.dropna(subset=["date"])
+
+
 @st.cache_data(ttl=3600)
 def load_weekly_campaigns() -> pd.DataFrame:
     """주별 신설/종료/동시활성 (가로형 → 세로형 변환)."""
