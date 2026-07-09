@@ -61,6 +61,30 @@ def resample_metrics(d: pd.DataFrame, freq: str) -> pd.DataFrame:
     return t
 
 
+def _fmt(n) -> str:
+    """큰 숫자 압축 (억/만) — metric 칸에 안 잘리게."""
+    n = float(n)
+    if abs(n) >= 1e8:
+        return f"{n/1e8:.2f}억"
+    if abs(n) >= 1e4:
+        return f"{n/1e4:.1f}만"
+    return f"{int(round(n)):,}"
+
+
+def render_totals(d: pd.DataFrame):
+    """묶음 전체 합계 — 한 줄 표(잘림 방지)."""
+    imp, clk = d["impressions"].sum(), d["clicks"].sum()
+    pur, sp = int(d["omni_purchase"].sum()), d["spend"].sum()
+    row = pd.DataFrame([{
+        "지출(₩)": f"{sp:,.0f}", "노출": f"{int(imp):,}", "클릭": f"{int(clk):,}",
+        "전환": f"{pur:,}",
+        "CPA(₩)": f"{sp/pur:,.0f}" if pur else "-",
+        "CTR": f"{clk/imp*100:.2f}%" if imp else "-",
+        "CVR": f"{pur/clk*100:.2f}%" if clk else "-",
+    }])
+    st.dataframe(row, hide_index=True, use_container_width=True)
+
+
 cs = creative_summary(df)
 
 st.title("📊 PLAUD 광고 성과 대시보드")
@@ -91,7 +115,10 @@ with tabs[0]:
 # ─────────────────────────── ② 소재 분석 ───────────────────────────
 with tabs[1]:
     st.subheader("소재별 성과 (표에서 소재 클릭 → 아래 추이)")
-    disp = cs[["소재", "최초집행", "최종집행", "수명일", "활성일수", "광고수",
+    st.markdown("**전체 합계** (현재 기간 · 모든 소재)")
+    render_totals(df)
+    st.divider()
+    disp = cs[["소재", "최초집행", "최종집행", "수명일", "활성일수", "광고수", "노출", "클릭",
                "지출", "구매_웹", "구매_오프", "구매_전체", "CPA", "CTR", "CVR"]].copy()
     disp["최초집행"] = disp["최초집행"].dt.date
     disp["최종집행"] = disp["최종집행"].dt.date
@@ -102,6 +129,8 @@ with tabs[1]:
         disp, use_container_width=True, hide_index=True, height=420,
         on_select="rerun", selection_mode="single-row", key="ctbl",
         column_config={
+            "노출": st.column_config.NumberColumn(format="localized"),
+            "클릭": st.column_config.NumberColumn(format="localized"),
             "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
             "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
             "CTR": st.column_config.NumberColumn(format="%.2f%%"),
@@ -156,7 +185,9 @@ with tabs[2]:
     mo = st.selectbox("제작월 선택", months, index=default_i)
     cohort = cs2[cs2["제작월"] == mo]["소재"].tolist()
     sub = df[df["소재"].isin(cohort)]
-    st.caption(f"{mo} 제작 소재 {len(cohort)}개 · 누적 지출 ₩{sub['spend'].sum():,.0f} · 구매 {int(sub['omni_purchase'].sum()):,}건")
+    st.markdown(f"**{mo} 제작 소재 {len(cohort)}개 — 전체 합계**")
+    render_totals(sub)
+    st.divider()
 
     freq_label = st.radio("주기", ["주", "월"], horizontal=True, index=0, key="cohort_freq")
     freq = {"주": "W-MON", "월": "MS"}[freq_label]
@@ -183,13 +214,16 @@ with tabs[2]:
         st.plotly_chart(f, use_container_width=True)
 
     st.markdown("**이 달 제작 소재 목록**")
-    ct = cs2[cs2["제작월"] == mo][["소재", "최초집행", "최종집행", "수명일", "지출", "구매_전체", "CPA", "CTR", "CVR"]].copy()
+    ct = cs2[cs2["제작월"] == mo][["소재", "최초집행", "최종집행", "수명일", "노출", "클릭",
+                                  "지출", "구매_전체", "CPA", "CTR", "CVR"]].copy()
     ct["최초집행"] = ct["최초집행"].dt.date
     ct["최종집행"] = ct["최종집행"].dt.date
     ct["지출"] = ct["지출"].round(0)
     ct["CPA"] = ct["CPA"].round(0)
     st.dataframe(ct.sort_values("지출", ascending=False), use_container_width=True, hide_index=True,
-                 column_config={"지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+                 column_config={"노출": st.column_config.NumberColumn(format="localized"),
+                                "클릭": st.column_config.NumberColumn(format="localized"),
+                                "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
                                 "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
                                 "CTR": st.column_config.NumberColumn(format="%.2f%%"),
                                 "CVR": st.column_config.NumberColumn(format="%.2f%%")})
