@@ -70,22 +70,26 @@ def _sheet_id() -> str:
 
 
 @st.cache_data(ttl=1800)
-def _excluded_ad_names() -> list:
-    """소재매핑에서 분류방식='제외'인 광고이름 (대시보드에서 숨김)."""
+def _creative_map():
+    """소재매핑 → (광고이름→소재 dict, 제외 광고이름 set). 대시보드가 실시간 반영."""
     try:
         ws = _gs_client().open_by_key(_sheet_id()).worksheet("소재매핑")
         m = pd.DataFrame(ws.get_all_records())
-        if m.empty or "분류방식" not in m.columns:
-            return []
-        hidden = m.loc[m["분류방식"].astype(str).str.strip() == "제외", "광고이름"]
-        return hidden.astype(str).str.strip().tolist()
+        if m.empty:
+            return {}, set()
+        m["광고이름"] = m["광고이름"].astype(str).str.strip()
+        m["소재"] = m["소재"].astype(str).str.strip()
+        how = m["분류방식"].astype(str).str.strip() if "분류방식" in m.columns else ""
+        excluded = set(m.loc[how == "제외", "광고이름"])
+        shown = m[how != "제외"]
+        return dict(zip(shown["광고이름"], shown["소재"])), excluded
     except Exception:
-        return []
+        return {}, set()
 
 
 @st.cache_data(ttl=1800)
 def load_meta_daily() -> pd.DataFrame:
-    """meta_소재일별 (라이브). 소재 단위 분석의 원천. 제외 광고이름은 숨김."""
+    """meta_소재일별 (라이브). 소재는 소재매핑 탭에서 실시간 조인, 제외 광고이름은 숨김."""
     ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")
     df = pd.DataFrame(ws.get_all_records())
     if df.empty:
@@ -94,14 +98,19 @@ def load_meta_daily() -> pd.DataFrame:
     for c in NUMERIC_COLS:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    # 문자열 컬럼 강제 str (gspread 숫자 자동변환 → Arrow 혼합타입 방지)
     for c in ["campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재"]:
         if c in df.columns:
             df[c] = df[c].astype(str)
     df = df.dropna(subset=["date"])
-    ex = set(_excluded_ad_names())
-    if ex:
-        df = df[~df["ad_name"].str.strip().isin(ex)]
+
+    # 소재매핑 실시간 반영: 제외 숨김 + 소재 재조인(시트가 최신 기준)
+    soje_map, excluded = _creative_map()
+    ad = df["ad_name"].str.strip()
+    if excluded:
+        keep = ~ad.isin(excluded)
+        df, ad = df[keep], ad[keep]
+    if soje_map:
+        df["소재"] = ad.map(soje_map).fillna(df["소재"])
     return df
 
 
