@@ -1,15 +1,65 @@
 """데이터 로딩 계층.
 
-지금은 로컬 엑셀(data/*.xlsx)에서 읽는다. Phase 2 에서 이 함수들의 내부만
-Meta/Google/매출 API → BigQuery 조회로 교체하면 앱(app.py)은 안 건드려도 된다.
+라이브 데이터는 비공개 Google Sheets(`meta_소재일별`·`소재매핑`)에서 읽는다.
+- Cloud: st.secrets['gcp_service_account'] + st.secrets['sheet_id']
+- 로컬 개발: env GOOGLE_APPLICATION_CREDENTIALS + PLAUD_SHEET_ID
 """
+import os
 from pathlib import Path
+
+import gspread
 import pandas as pd
 import streamlit as st
+from google.oauth2.service_account import Credentials
 
 DATA_DIR = Path(__file__).parent / "data"
 F_GARO = DATA_DIR / "메타_캠페인_신설_생존_가로.xlsx"
 F_SURV = DATA_DIR / "메타_캠페인_신설_생존분석.xlsx"
+
+GS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+NUMERIC_COLS = ["spend", "impressions", "clicks", "link_clicks",
+                "purchase", "offline_purchase", "omni_purchase", "revenue",
+                "ctr", "cvr", "cpa", "cpm"]
+
+
+def _gs_client() -> gspread.Client:
+    try:
+        info = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(info, scopes=GS_SCOPES)
+    except Exception:
+        path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not path:
+            raise RuntimeError("서비스계정 자격증명 없음 (st.secrets 또는 GOOGLE_APPLICATION_CREDENTIALS).")
+        creds = Credentials.from_service_account_file(path, scopes=GS_SCOPES)
+    return gspread.authorize(creds)
+
+
+def _sheet_id() -> str:
+    try:
+        return st.secrets["sheet_id"]
+    except Exception:
+        sid = os.environ.get("PLAUD_SHEET_ID")
+        if not sid:
+            raise RuntimeError("SHEET_ID 없음 (st.secrets['sheet_id'] 또는 PLAUD_SHEET_ID).")
+        return sid
+
+
+@st.cache_data(ttl=1800)
+def load_meta_daily() -> pd.DataFrame:
+    """meta_소재일별 (라이브). 소재 단위 분석의 원천."""
+    ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")
+    df = pd.DataFrame(ws.get_all_records())
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    for c in NUMERIC_COLS:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    # 문자열 컬럼 강제 str (gspread 숫자 자동변환 → Arrow 혼합타입 방지)
+    for c in ["campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str)
+    return df.dropna(subset=["date"])
 
 
 @st.cache_data(ttl=3600)

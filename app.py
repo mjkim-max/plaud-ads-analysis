@@ -1,8 +1,6 @@
-"""PLAUD 광고 성과 대시보드 (Streamlit).
+"""PLAUD 광고 성과 대시보드 (Streamlit) — 라이브 Google Sheets 기반.
 
-Phase 1 MVP — 로컬 엑셀(캠페인 신설·생존 데이터) 기반.
-Phase 2 에서 Meta/Google/매출 API → BigQuery 연결로 실시간화 예정.
-
+데이터: meta_소재일별 (매일 자동 수집). 소재(정규명) 단위로 묶어 광고이름 파편화를 해소.
 근거 분석: 광고분석_종합정리.md / 광고분석_대시보드_가이드(_보강분).md
 """
 import pandas as pd
@@ -12,143 +10,254 @@ import streamlit as st
 
 import data_loader as dl
 
-st.set_page_config(page_title="PLAUD 광고 성과 대시보드", page_icon="📊", layout="wide")
+st.set_page_config(page_title="PLAUD 광고 대시보드", page_icon="📊", layout="wide")
 
-# ── 분석 문서에서 확정된 요약 수치 (Phase 2 에서 라이브 계산으로 대체) ──
-CHANNEL_MIX = {"네이버": 42, "자사몰": 34, "쿠팡": 22, "기타": 1}
-SELF_MALL_REGRESSION = {  # 자사몰 전환 1건당 판매 대수 (증감 회귀)
-    "Google검색": 3.3, "메타": 0.85, "디멘드젠": 0.39,
-}
-META_CPA_START, META_CPA_NOW = 82_000, 157_000
+ACTIVE_WINDOW = 14   # 최근 N일 집행 = 활성
+BLUE, GREEN, AMBER, GRAY, RED = "#2563eb", "#22c55e", "#f59e0b", "#9ca3af", "#ef4444"
+
+
+# ────────────────────────── 데이터 ──────────────────────────
+try:
+    df = dl.load_meta_daily()
+except Exception as e:
+    st.error(f"데이터 로드 실패: {e}\n\nStreamlit Secrets에 `gcp_service_account`·`sheet_id`가 있는지 확인하세요.")
+    st.stop()
+
+if df.empty:
+    st.warning("meta_소재일별 데이터가 비어있습니다.")
+    st.stop()
+
+max_date = df["date"].max()
+
+# 사이드바 — 기간 필터
+st.sidebar.header("필터")
+dmin, dmax = df["date"].min().date(), max_date.date()
+rng = st.sidebar.date_input("기간", (dmin, dmax), min_value=dmin, max_value=dmax)
+if isinstance(rng, tuple) and len(rng) == 2:
+    df = df[(df["date"].dt.date >= rng[0]) & (df["date"].dt.date <= rng[1])]
+st.sidebar.caption(f"소재 {df['소재'].nunique()}개 · 광고 {df['ad_name'].nunique()}개 · {len(df):,}행")
+st.sidebar.caption(f"최신 데이터: {max_date.date()}")
+
+
+@st.cache_data(ttl=1800)
+def creative_summary(d: pd.DataFrame) -> pd.DataFrame:
+    """소재 단위 집계 — 수명·활성·지출·구매3종·통합 CPA."""
+    spent = d[d["spend"] > 0].groupby("소재")["date"]
+    g = d.groupby("소재")
+    s = pd.DataFrame({
+        "지출": g["spend"].sum(),
+        "노출": g["impressions"].sum(),
+        "클릭": g["clicks"].sum(),
+        "구매_웹": g["purchase"].sum(),
+        "구매_오프": g["offline_purchase"].sum(),
+        "구매_전체": g["omni_purchase"].sum(),
+        "매출": g["revenue"].sum(),
+        "광고수": g["ad_id"].nunique(),
+        "최초집행": spent.min(),
+        "최종집행": spent.max(),
+        "활성일수": spent.nunique(),
+    })
+    s["수명일"] = (s["최종집행"] - s["최초집행"]).dt.days + 1
+    s["CPA"] = (s["지출"] / s["구매_전체"]).where(s["구매_전체"] > 0)
+    s["CTR"] = (s["클릭"] / s["노출"]).where(s["노출"] > 0)
+    s["CVR"] = (s["구매_전체"] / s["클릭"]).where(s["클릭"] > 0)
+    return s.reset_index()
+
+
+cs = creative_summary(df)
+active_mask = cs["최종집행"] >= (max_date - pd.Timedelta(days=ACTIVE_WINDOW))
+median_cpa = cs.loc[active_mask & cs["CPA"].notna(), "CPA"].median()
+if pd.isna(median_cpa):
+    median_cpa = cs["CPA"].median()
+
+
+def headroom(row) -> str:
+    if row["최종집행"] < (max_date - pd.Timedelta(days=ACTIVE_WINDOW)):
+        return "⚪ 휴면"
+    if pd.isna(row["CPA"]):
+        return "🟡 관망(구매無)"
+    return "🟢 증액후보" if row["CPA"] <= median_cpa else "🔴 비효율"
+
+
+cs["집행여력"] = cs.apply(headroom, axis=1)
 
 st.title("📊 PLAUD 광고 성과 대시보드")
-st.caption(
-    "자사몰 매출 우상향이 목표. 광고는 **자사몰(34%)에만 귀인**. "
-    "액션 판단은 증감상관, 구조 진단은 수준상관 기준. · 데이터: 캠페인 신설·생존(~2026-07-07)"
-)
+st.caption(f"자사몰 매출 우상향이 목표 · 소재(정규명) 단위 분석 · 데이터 {dmin}~{dmax} (자동 갱신)")
 
-tab_names = [
-    "① 개요", "② 캠페인 병렬", "③ 캠페인 생존", "④ 소재 생존",
-    "⑤ 메타 효율", "⑥ 채널별", "⑦ 소재 품질", "⑧ 전략·액션",
-]
-tabs = st.tabs(tab_names)
+tabs = st.tabs(["① 개요", "② 소재 분석", "③ 메타 효율 추이", "④ 소재 생존·품질", "⑤ 캠페인", "⑥ 전략"])
 
-# ────────────────────────────── ① 개요 ──────────────────────────────
+# ─────────────────────────── ① 개요 ───────────────────────────
 with tabs[0]:
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("메타 CPA (현재)", f"{META_CPA_NOW:,}원",
-              f"{META_CPA_NOW - META_CPA_START:+,}원 vs 연초", delta_color="inverse")
-    wk = dl.load_weekly_campaigns()
-    latest_active = int(wk["동시활성"].iloc[-1]) if not wk.empty else 0
-    c2.metric("동시활성 캠페인", f"{latest_active}개", "연초 대비 약 2배")
-    c3.metric("동시활성 ↔ CPA", "+0.85", "병렬↑ = CPA↑ (학습낭비)", delta_color="off")
-    surv = dl.load_campaign_survival()
-    med_life = int(surv["생존일수"].median()) if not surv.empty else 0
-    c4.metric("캠페인 중앙 수명", f"{med_life}일", delta_color="off")
+    tot_spend, tot_omni = df["spend"].sum(), df["omni_purchase"].sum()
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("총 지출", f"₩{tot_spend/1e8:.2f}억")
+    c2.metric("총 구매(전체)", f"{int(tot_omni):,}건")
+    c3.metric("통합 CPA", f"₩{tot_spend/tot_omni:,.0f}" if tot_omni else "-")
+    c4.metric("활성 소재", f"{int(active_mask.sum())}개", f"전체 {len(cs)}개 중")
+    c5.metric("🟢 증액후보", f"{int((cs['집행여력']=='🟢 증액후보').sum())}개", delta_color="off")
 
     st.divider()
-    g1, g2 = st.columns(2)
+    g1, g2 = st.columns([3, 2])
     with g1:
-        st.subheader("판매 채널 구성")
-        fig = go.Figure(go.Pie(
-            labels=list(CHANNEL_MIX), values=list(CHANNEL_MIX.values()), hole=0.5,
-            marker_colors=["#22c55e", "#2563eb", "#f59e0b", "#9ca3af"]))
-        fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=320)
+        st.subheader("월별 지출 vs 구매")
+        m = df.set_index("date").resample("MS").agg(지출=("spend", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+        fig = go.Figure()
+        fig.add_bar(x=m["date"], y=m["지출"], name="지출", marker_color=BLUE, yaxis="y")
+        fig.add_scatter(x=m["date"], y=m["구매"], name="구매", mode="lines+markers",
+                        line=dict(color=GREEN, width=3), yaxis="y2")
+        fig.update_layout(height=360, margin=dict(t=20, b=10),
+                          yaxis=dict(title="지출"), yaxis2=dict(title="구매", overlaying="y", side="right"),
+                          legend=dict(orientation="h", y=1.12))
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("도넛은 매출 **출처 비중**이지 광고 효율이 아님. 광고는 자사몰 34%에만 귀인.")
     with g2:
-        st.subheader("자사몰 매출 회귀 — 전환 1건당 판매 대수")
-        reg = pd.DataFrame(
-            {"채널": list(SELF_MALL_REGRESSION), "판매대수": list(SELF_MALL_REGRESSION.values())})
-        fig = px.bar(reg, x="판매대수", y="채널", orientation="h", text="판매대수",
-                     color="채널", color_discrete_sequence=["#2563eb", "#22c55e", "#f59e0b"])
-        fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10), height=320)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("**Google검색 +3.3대**로 건당 효율 최고인데 규모가 작음 = 가장 저평가된 기회.")
+        st.subheader("지출 상위 소재 Top 10")
+        top = cs.nlargest(10, "지출")[["소재", "지출", "CPA"]].copy()
+        top["지출"] = top["지출"].round(0)
+        top["CPA"] = top["CPA"].round(0)
+        st.dataframe(top, use_container_width=True, hide_index=True,
+                     column_config={"지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+                                    "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized")})
 
-# ───────────────────────────── ② 캠페인 병렬 ─────────────────────────
+# ─────────────────────────── ② 소재 분석 ───────────────────────────
 with tabs[1]:
-    st.subheader("주별 신설 · 종료 · 동시활성")
-    wk = dl.load_weekly_campaigns()
-    fig = go.Figure()
-    fig.add_bar(x=wk["주차"], y=wk["신설"], name="신설", marker_color="#93c5fd")
-    fig.add_bar(x=wk["주차"], y=wk["종료"], name="종료", marker_color="#fca5a5")
-    fig.add_scatter(x=wk["주차"], y=wk["동시활성"], name="동시활성",
-                    mode="lines+markers", line=dict(color="#2563eb", width=3), yaxis="y2")
-    fig.update_layout(
-        barmode="group", height=420, margin=dict(t=20, b=10),
-        yaxis=dict(title="신설/종료"), yaxis2=dict(title="동시활성", overlaying="y", side="right"),
-        legend=dict(orientation="h", y=1.1))
-    st.plotly_chart(fig, use_container_width=True)
-    st.info("동시활성 11 → 30개로 병렬 증설. **동시활성 ↔ CPA = +0.85** — 많이 돌릴수록 학습 낭비로 CPA 상승. "
-            "CPM(자가경쟁)이 아니라 학습단계 낭비다(동시활성↔CPM 0.04).")
+    st.subheader("소재 단위 성과 — 수명 · 통합 CPA · 추가 집행 여력")
+    st.caption(f"광고이름이 아니라 **소재**로 묶어 봄. 활성 = 최근 {ACTIVE_WINDOW}일 내 집행. "
+               f"🟢 증액후보 = 활성 & CPA ≤ 활성소재 중앙값(₩{median_cpa:,.0f}).")
 
-    st.subheader("월별 소재 수명 분포 (단 ≤14 / 중 15–29 / 장 ≥30일)")
-    mt = dl.load_monthly_tiers()
-    fig2 = go.Figure()
-    for col, color in [("단기 ≤14일", "#fca5a5"), ("중기 15-29일", "#fde047"), ("장기 ≥30일", "#22c55e")]:
-        if col in mt.columns:
-            fig2.add_bar(x=mt["코호트"].astype(str), y=mt[col] * 100, name=col, marker_color=color)
-    fig2.update_layout(barmode="stack", height=360, yaxis_title="비율 (%)", margin=dict(t=20, b=10),
-                       legend=dict(orientation="h", y=1.1))
-    st.plotly_chart(fig2, use_container_width=True)
-    st.caption("변곡점 = **4월(양산 시작)**. 6월 단기 75%·장기 6% — 최근 소재가 빨리 죽음. "
-               "단, 최근 월은 절단으로 장기%가 과소.")
+    f1, f2 = st.columns([1, 3])
+    only = f1.selectbox("보기", ["전체", "🟢 증액후보", "🔴 비효율", "⚪ 휴면", "🟡 관망(구매無)"])
+    view = cs if only == "전체" else cs[cs["집행여력"] == only]
 
-# ───────────────────────────── ③ 캠페인 생존 ─────────────────────────
-with tabs[2]:
-    surv = dl.load_campaign_survival()
-    st.subheader("생존일수 vs CPA — 오래 산 캠페인이 효율이 좋은가")
-    plot_df = surv.dropna(subset=["생존일수", "CPA(KRW)", "총지출(KRW)"])
-    plot_df = plot_df[plot_df["CPA(KRW)"] > 0]
-    fig = px.scatter(plot_df, x="생존일수", y="CPA(KRW)", color="상태",
-                     hover_name="캠페인", size="총지출(KRW)", size_max=30,
-                     color_discrete_map={"진행중": "#2563eb", "종료": "#9ca3af"})
+    show = view[["소재", "집행여력", "최초집행", "최종집행", "수명일", "활성일수", "광고수",
+                 "지출", "구매_웹", "구매_오프", "구매_전체", "CPA", "CTR", "CVR"]].copy()
+    show["최초집행"] = show["최초집행"].dt.date
+    show["최종집행"] = show["최종집행"].dt.date
+    show["CTR"] = show["CTR"] * 100
+    show["CVR"] = show["CVR"] * 100
+    show["지출"] = show["지출"].round(0)
+    show["CPA"] = show["CPA"].round(0)
+    st.dataframe(
+        show.sort_values("지출", ascending=False), use_container_width=True, hide_index=True, height=420,
+        column_config={
+            "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+            "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
+            "CTR": st.column_config.NumberColumn(format="%.2f%%"),
+            "CVR": st.column_config.NumberColumn(format="%.2f%%"),
+        })
+
+    st.subheader("수명 vs 통합 CPA (버블 = 지출)")
+    plot = cs[(cs["구매_전체"] > 0) & (cs["수명일"].notna())]
+    fig = px.scatter(plot, x="수명일", y="CPA", size="지출", color="집행여력", hover_name="소재",
+                     size_max=40, color_discrete_map={"🟢 증액후보": GREEN, "🔴 비효율": RED,
+                                                       "⚪ 휴면": GRAY, "🟡 관망(구매無)": AMBER})
     fig.update_layout(height=420, margin=dict(t=20, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("장수 저CPA 히어로 / 고CPA 낭비 캠페인")
-    view = surv[["캠페인", "생존일수", "상태", "총지출(KRW)", "총구매", "CPA(KRW)"]].copy()
+# ─────────────────────────── ③ 메타 효율 추이 ───────────────────────────
+with tabs[2]:
+    st.subheader("메타 효율 시계열")
+    freq_label = st.radio("주기", ["일", "주", "월"], horizontal=True, index=1)
+    freq = {"일": "D", "주": "W-MON", "월": "MS"}[freq_label]
+    t = df.set_index("date").resample(freq).agg(
+        지출=("spend", "sum"), 노출=("impressions", "sum"), 클릭=("clicks", "sum"),
+        구매=("omni_purchase", "sum")).reset_index()
+    t = t[t["지출"] > 0]
+    t["CPA"] = (t["지출"] / t["구매"]).where(t["구매"] > 0)
+    t["CTR"] = (t["클릭"] / t["노출"] * 100).where(t["노출"] > 0)
+    t["CVR"] = (t["구매"] / t["클릭"] * 100).where(t["클릭"] > 0)
+    t["CPM"] = (t["지출"] / t["노출"] * 1000).where(t["노출"] > 0)
+
+    fig = go.Figure()
+    fig.add_bar(x=t["date"], y=t["지출"], name="지출", marker_color="#bfdbfe", yaxis="y")
+    fig.add_scatter(x=t["date"], y=t["CPA"], name="CPA", mode="lines+markers",
+                    line=dict(color=RED, width=3), yaxis="y2")
+    fig.update_layout(height=360, margin=dict(t=20, b=10), yaxis=dict(title="지출"),
+                      yaxis2=dict(title="CPA", overlaying="y", side="right"),
+                      legend=dict(orientation="h", y=1.12))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("비용↑인데 CPA↑ = 수확 체감(포화). CPA 원인은 CPM(매체)이 아니라 소재(CTR·CVR).")
+
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        fig2 = go.Figure()
+        fig2.add_scatter(x=t["date"], y=t["CTR"], name="CTR%", line=dict(color=BLUE))
+        fig2.add_scatter(x=t["date"], y=t["CVR"], name="CVR%", line=dict(color=GREEN))
+        fig2.update_layout(height=300, margin=dict(t=30, b=10), title="CTR / CVR (%)",
+                           legend=dict(orientation="h", y=1.15))
+        st.plotly_chart(fig2, use_container_width=True)
+    with cc2:
+        fig3 = go.Figure()
+        fig3.add_scatter(x=t["date"], y=t["CPM"], name="CPM", line=dict(color=AMBER))
+        fig3.update_layout(height=300, margin=dict(t=30, b=10), title="CPM (매체 단가)")
+        st.plotly_chart(fig3, use_container_width=True)
+
+# ─────────────────────────── ④ 소재 생존·품질 ───────────────────────────
+with tabs[3]:
+    st.subheader("소재 생존곡선 (수명 ≥ N일 비율)")
+    life = cs["수명일"].dropna()
+    ks = list(range(0, int(min(life.max(), 120)) + 1, 3)) or [0]
+    surv = [(life >= k).mean() * 100 for k in ks]
+    fig = go.Figure(go.Scatter(x=ks, y=surv, mode="lines", fill="tozeroy", line=dict(color=BLUE)))
+    fig.update_layout(height=340, margin=dict(t=20, b=10), xaxis_title="일수 K", yaxis_title="생존율 (%)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("※ 최근 출시 소재는 절단(censoring)으로 수명이 짧게 잡힘 — 최근 코호트 장기율은 과소.")
+
+    q1, q2 = st.columns(2)
+    with q1:
+        st.subheader("출시월별 평균 CTR")
+        cs2 = cs.copy()
+        cs2["출시월"] = cs2["최초집행"].dt.to_period("M").astype(str)
+        mm = cs2.dropna(subset=["CTR"]).groupby("출시월").apply(
+            lambda x: (x["클릭"].sum() / x["노출"].sum() * 100) if x["노출"].sum() else 0).reset_index(name="CTR")
+        fig2 = px.bar(mm, x="출시월", y="CTR", color_discrete_sequence=[BLUE])
+        fig2.update_layout(height=320, margin=dict(t=20, b=10), yaxis_title="CTR (%)")
+        st.plotly_chart(fig2, use_container_width=True)
+    with q2:
+        st.subheader("출시월별 소재 수명 분포")
+        cs2["구간"] = pd.cut(cs2["수명일"], [0, 14, 29, 10**9], labels=["단기≤14", "중기15-29", "장기≥30"])
+        dist = cs2.groupby(["출시월", "구간"], observed=True).size().reset_index(name="n")
+        fig3 = px.bar(dist, x="출시월", y="n", color="구간", barmode="stack",
+                      color_discrete_map={"단기≤14": "#fca5a5", "중기15-29": "#fde047", "장기≥30": GREEN})
+        fig3.update_layout(height=320, margin=dict(t=20, b=10), yaxis_title="소재 수")
+        st.plotly_chart(fig3, use_container_width=True)
+
+# ─────────────────────────── ⑤ 캠페인 ───────────────────────────
+with tabs[4]:
+    st.subheader("캠페인별 성과")
+    spent_c = df[df["spend"] > 0].groupby("campaign_name")["date"]
+    gc = df.groupby("campaign_name")
+    camp = pd.DataFrame({
+        "지출": gc["spend"].sum(), "구매": gc["omni_purchase"].sum(),
+        "소재수": gc["소재"].nunique(), "광고수": gc["ad_id"].nunique(),
+        "최초": spent_c.min(), "최종": spent_c.max(),
+    })
+    camp["수명일"] = (camp["최종"] - camp["최초"]).dt.days + 1
+    camp["CPA"] = (camp["지출"] / camp["구매"]).where(camp["구매"] > 0)
+    camp = camp.reset_index()
+    camp["최초"] = camp["최초"].dt.date
+    camp["최종"] = camp["최종"].dt.date
+    camp["지출"] = camp["지출"].round(0)
+    camp["CPA"] = camp["CPA"].round(0)
     st.dataframe(
-        view.sort_values("CPA(KRW)", na_position="last"),
-        use_container_width=True, hide_index=True,
-        column_config={
-            "총지출(KRW)": st.column_config.NumberColumn(format="%,d"),
-            "CPA(KRW)": st.column_config.NumberColumn(format="%,d"),
-        })
-    st.caption("정렬로 '장수+저CPA'(성숙·유지 대상) vs '단명+고CPA'(정리 대상) 식별. "
-               "활성일↔CPA −0.36 / 잦은 ON/OFF↔CPA +0.23.")
+        camp.sort_values("지출", ascending=False),
+        use_container_width=True, hide_index=True, height=460,
+        column_config={"지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+                       "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized")})
 
-# ─────────────────── ④~⑦ 소스 데이터 필요 (스텁) ───────────────────
-NEED_SOURCE = {
-    3: ("소재 생존", "생존곡선·수명분포. `일별-구매-링크(8).xlsx`(소재 140개) 필요."),
-    4: ("메타 효율", "일/주/월 비용·CPA·CTR·CVR·CPM 시계열. `일별-구매-링크(2)/(6).xlsx` 필요."),
-    5: ("채널별 상세", "13개 채널 주별 비용·전환·CPA. `일별-구매-링크(2).xlsx` 필요."),
-    6: ("소재 품질·피로", "출시월별 CTR, 초기 vs 후기 CTR 매칭. `일별-구매-링크(8).xlsx` 필요."),
-}
-for idx, (title, need) in NEED_SOURCE.items():
-    with tabs[idx]:
-        st.subheader(title)
-        st.warning(f"🔜 **소스 데이터 대기 중** — {need}\n\n"
-                   "현재 vault엔 캠페인 신설·생존 엑셀만 있음. 주간 채널·소재 원본을 넣으면 이 탭을 채웁니다.")
-
-# ───────────────────────────── ⑧ 전략·액션 ─────────────────────────
-with tabs[7]:
+# ─────────────────────────── ⑥ 전략 ───────────────────────────
+with tabs[5]:
     st.subheader("우선순위 액션")
     st.markdown("""
-1. **소재 교체·확충 (1순위)** — 메타 효율의 유일한 실질 레버. 문제는 '피로'가 아니라 **출시 품질(양산 부작용)** → 제작 방식을 손봐야.
-2. **Google 검색 증액 (2순위)** — 자사몰 전환당 +3.3대, 건당 최고인데 규모 작음(저평가).
+1. **소재 교체·확충 (1순위)** — 메타 효율의 유일한 실질 레버. 문제는 '피로'가 아니라 **출시 품질(양산 부작용)** → 제작 방식 개선.
+2. **Google 검색 증액 (2순위)** — 자사몰 전환당 +3.3대, 건당 최고인데 규모 작음(저평가). *(구글 데이터 연결 예정)*
 3. **메타는 예산증액 말고 효율개선** — 포화(비용↔CVR −0.45). 소재로 CVR 회복 후 증액.
-4. **디멘드젠 소액 증액 테스트** — 증감 기여 유의(+9.7대/100만원).
-5. **승자 소재 성숙·유지** — 잦은 on/off 금지(ON수↔CPA +0.23).
-6. **하지 말 것** — 단순 CPA 미달로 캠페인 끄기(학습 리셋 → CPA 악화). CPA는 kill-switch 아니라 원인 색출 트리거.
-7. **증액 대상 아님** — PMax·GDN(자사몰 증분 근거 없음, 유지), 디젠트래픽·머니코믹스·리타게팅(축소 검토).
+4. **🟢 증액후보 소재부터** — 소재 분석 탭에서 활성 & 저CPA 소재 = 추가 집행 여력. 잦은 on/off 금지.
+5. **하지 말 것** — 단순 CPA 미달로 끄기(학습 리셋). CPA는 kill-switch 아니라 원인 색출 트리거.
 """)
     st.divider()
-    st.subheader("열린 검증 과제")
+    st.subheader("열린 과제")
     st.markdown("""
-- [ ] ROAS/영업이익 기준 분석 (`연간 매출 분석 시작.xlsx`)
-- [ ] 양산 부작용 vs 순수 소재 품질 저하 분리
-- [ ] 신설 캠페인 30일+ 생존율(히어로 발굴율) 코호트 추적
-- [ ] 온/오프 증분(incrementality) 테스트 — 디젠트래픽·PMax 실제 기여
+- [ ] 매출(자사몰·네이버·쿠팡) 시트 연결 → **ROAS/영업이익** 기준 분석
+- [ ] Google Ads 연결 → 채널 통합 뷰
+- [ ] 소재매핑 `자동` 분류 검토·병합 (시트에서 수정 시 자동 반영)
 """)
