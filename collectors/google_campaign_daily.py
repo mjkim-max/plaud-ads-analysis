@@ -42,8 +42,8 @@ def fetch(since: str, until: str) -> list[dict]:
     if config.GADS_LOGIN_CUSTOMER_ID:
         headers["login-customer-id"] = config.GADS_LOGIN_CUSTOMER_ID
     query = (
-        "SELECT segments.date, campaign.name, metrics.impressions, "
-        "metrics.clicks, metrics.cost_micros FROM campaign "
+        "SELECT segments.date, campaign.name, campaign.advertising_channel_type, "
+        "metrics.impressions, metrics.clicks, metrics.cost_micros FROM campaign "
         f"WHERE segments.date BETWEEN '{since}' AND '{until}'"
     )
     # 설정 버전 먼저, 404면 최신순으로 자동 시도
@@ -67,9 +67,11 @@ def transform(raw: list[dict]) -> pd.DataFrame:
     out = []
     for res in raw:
         met = res.get("metrics", {})
+        camp = res.get("campaign", {})
         out.append({
             "date": res.get("segments", {}).get("date"),
-            "campaign_name": res.get("campaign", {}).get("name", ""),
+            "campaign_name": camp.get("name", ""),
+            "channel": camp.get("advertisingChannelType", ""),
             "impressions": int(met.get("impressions", 0) or 0),
             "clicks": int(met.get("clicks", 0) or 0),
             "cost": round(int(met.get("costMicros", 0) or 0) / 1e6, 2),
@@ -78,7 +80,7 @@ def transform(raw: list[dict]) -> pd.DataFrame:
     if df.empty:
         return df
     # 캠페인×일자 합산(중복 방지)
-    df = df.groupby(["date", "campaign_name"], as_index=False).agg(
+    df = df.groupby(["date", "campaign_name", "channel"], as_index=False).agg(
         impressions=("impressions", "sum"), clicks=("clicks", "sum"), cost=("cost", "sum"))
     return df[df["impressions"] + df["clicks"] + df["cost"] > 0].reset_index(drop=True)
 

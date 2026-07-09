@@ -46,7 +46,7 @@ GADS_CUSTOMER_ID = os.environ.get("GOOGLE_ADS_CUSTOMER_ID", "").replace("-", "")
 TAB_META_CREATIVE_DAILY = "meta_소재일별"
 TAB_CREATIVE_MAP = "소재매핑"
 TAB_GOOGLE_DAILY = "google_일별"
-GOOGLE_DAILY_COLUMNS = ["date", "campaign_name", "impressions", "clicks", "cost"]
+GOOGLE_DAILY_COLUMNS = ["date", "campaign_name", "channel", "impressions", "clicks", "cost"]
 
 META_CREATIVE_DAILY_COLUMNS = [
     "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재",
