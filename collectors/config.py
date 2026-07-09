@@ -21,18 +21,24 @@ LOOKBACK_DAYS = int(os.environ.get("META_LOOKBACK_DAYS", "30"))
 META_SINCE = os.environ.get("META_SINCE", "").strip()
 META_UNTIL = os.environ.get("META_UNTIL", "").strip()
 
-# 구매로 인정할 action_type 우선순위 (앞에서부터 발견되는 것 사용)
-PURCHASE_ACTION_TYPES = [
-    "omni_purchase",
-    "purchase",
-    "offsite_conversion.fb_pixel_purchase",
-]
+# 구매 카테고리별 action_type 후보 (카테고리 안에서 앞에서부터 첫 매칭 1개만 사용)
+PURCHASE_TYPES = {
+    "purchase":         ["offsite_conversion.fb_pixel_purchase", "web_in_store_purchase", "purchase"],  # 웹(픽셀) 구매
+    "offline_purchase": ["offline_conversion.purchase"],                                                 # 오프라인 구매
+    "omni_purchase":    ["omni_purchase"],                                                               # 전체(옴니) 구매
+}
+# 구매금액(매출) — 전체 기준
+REVENUE_TYPES = ["omni_purchase", "offsite_conversion.fb_pixel_purchase", "purchase"]
+
+# 구매목표로 인정할 캠페인 objective (판매/전환 계열만; 트래픽·인지 등은 제외)
+PURCHASE_OBJECTIVES = {"OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES"}
 
 # 탭 이름
 TAB_META_CREATIVE_DAILY = "meta_소재일별"
 
 META_CREATIVE_DAILY_COLUMNS = [
-    "date", "campaign_name", "adset_name", "ad_id", "ad_name",
+    "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name",
     "spend", "impressions", "clicks", "link_clicks",
-    "purchases", "revenue", "ctr", "cvr", "cpa", "cpm",
+    "purchase", "offline_purchase", "omni_purchase", "revenue",
+    "ctr", "cvr", "cpa", "cpm",
 ]

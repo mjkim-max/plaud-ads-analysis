@@ -85,7 +85,7 @@ def fetch_insights(since: str, until: str) -> list[dict]:
         "time_increment": 1,
         "time_range": f'{{"since":"{since}","until":"{until}"}}',
         "fields": ",".join([
-            "date_start", "campaign_name", "adset_name", "ad_id", "ad_name",
+            "date_start", "campaign_name", "adset_name", "objective", "ad_id", "ad_name",
             "spend", "impressions", "clicks", "inline_link_clicks",
             "actions", "action_values",
         ]),
@@ -111,28 +111,49 @@ def transform(raw: list[dict]) -> pd.DataFrame:
         spend = _num(row.get("spend"))
         impressions = _num(row.get("impressions"))
         clicks = _num(row.get("clicks"))
-        purchases = _extract_action(row.get("actions"), config.PURCHASE_ACTION_TYPES)
-        revenue = _extract_action(row.get("action_values"), config.PURCHASE_ACTION_TYPES)
+        actions = row.get("actions")
+        purchase = _extract_action(actions, config.PURCHASE_TYPES["purchase"])
+        offline = _extract_action(actions, config.PURCHASE_TYPES["offline_purchase"])
+        omni = _extract_action(actions, config.PURCHASE_TYPES["omni_purchase"])
+        revenue = _extract_action(row.get("action_values"), config.REVENUE_TYPES)
         out.append({
             "date": row.get("date_start"),
             "campaign_name": row.get("campaign_name", ""),
             "adset_name": row.get("adset_name", ""),
+            "objective": row.get("objective", ""),
             "ad_id": row.get("ad_id", ""),
             "ad_name": row.get("ad_name", ""),
             "spend": round(spend, 2),
             "impressions": int(impressions),
             "clicks": int(clicks),
             "link_clicks": int(_num(row.get("inline_link_clicks"))),
-            "purchases": int(purchases),
+            "purchase": int(purchase),
+            "offline_purchase": int(offline),
+            "omni_purchase": int(omni),
             "revenue": round(revenue, 2),
             "ctr": round(clicks / impressions, 6) if impressions else 0.0,
-            "cvr": round(purchases / clicks, 6) if clicks else 0.0,
-            "cpa": round(spend / purchases, 2) if purchases else 0.0,
+            "cvr": round(omni / clicks, 6) if clicks else 0.0,   # 전환율=전체구매÷클릭
+            "cpa": round(spend / omni, 2) if omni else 0.0,      # CPA=지출÷전체구매
             "cpm": round(spend / impressions * 1000, 2) if impressions else 0.0,
         })
     df = pd.DataFrame(out, columns=config.META_CREATIVE_DAILY_COLUMNS)
-    # 지출 없는 행 제외 (스키마: 지출>0 기준)
-    return df[df["spend"] > 0].reset_index(drop=True)
+    if df.empty:
+        return df
+
+    # 어떤 objective가 있는지 로그 (필터 검증용)
+    print(f"[meta] objective 분포: {df['objective'].value_counts().to_dict()}")
+
+    # ② 구매목표 캠페인만 유지
+    before = len(df)
+    df = df[df["objective"].isin(config.PURCHASE_OBJECTIVES)]
+    print(f"[meta] 구매목표 필터: {before} → {len(df)}행 (제외 {before - len(df)})")
+
+    # ③ 지출>0 이거나 구매>0 이면 유지 (지출0·구매0만 버림)
+    purch_any = df[["purchase", "offline_purchase", "omni_purchase"]].sum(axis=1)
+    df = df[(df["spend"] > 0) | (purch_any > 0)]
+    print(f"[meta] 지출>0 또는 구매>0: {len(df)}행")
+
+    return df.reset_index(drop=True)
 
 
 def run(since: str = "", until: str = "") -> int:
@@ -151,7 +172,7 @@ def run(since: str = "", until: str = "") -> int:
         raw.extend(chunk)
         time.sleep(2)  # 청크 간 간격 (레이트리밋 예방)
     df = transform(raw)
-    print(f"[meta] 지출>0 소재-일 행: {len(df)}")
+    print(f"[meta] 최종 적재 대상 행: {len(df)}")
 
     total = sheets_io.upsert_by_date(
         df, config.TAB_META_CREATIVE_DAILY, config.META_CREATIVE_DAILY_COLUMNS)
