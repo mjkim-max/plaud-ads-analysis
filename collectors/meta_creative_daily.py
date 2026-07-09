@@ -86,7 +86,7 @@ def fetch_insights(since: str, until: str) -> list[dict]:
         "time_range": f'{{"since":"{since}","until":"{until}"}}',
         "fields": ",".join([
             "date_start", "campaign_name", "adset_name", "objective", "ad_id", "ad_name",
-            "spend", "impressions", "clicks", "inline_link_clicks",
+            "spend", "impressions", "reach", "frequency", "clicks", "inline_link_clicks",
             "actions", "action_values",
         ]),
         "limit": 500,
@@ -125,6 +125,8 @@ def transform(raw: list[dict]) -> pd.DataFrame:
             "ad_name": row.get("ad_name", ""),
             "spend": round(spend, 2),
             "impressions": int(impressions),
+            "reach": int(_num(row.get("reach"))),
+            "frequency": round(_num(row.get("frequency")), 3),
             "clicks": int(clicks),
             "link_clicks": int(_num(row.get("inline_link_clicks"))),
             "purchase": int(purchase),

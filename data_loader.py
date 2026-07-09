@@ -18,7 +18,7 @@ F_GARO = DATA_DIR / "메타_캠페인_신설_생존_가로.xlsx"
 F_SURV = DATA_DIR / "메타_캠페인_신설_생존분석.xlsx"
 
 GS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-NUMERIC_COLS = ["spend", "impressions", "clicks", "link_clicks",
+NUMERIC_COLS = ["spend", "impressions", "reach", "frequency", "clicks", "link_clicks",
                 "purchase", "offline_purchase", "omni_purchase", "revenue",
                 "ctr", "cvr", "cpa", "cpm"]
 

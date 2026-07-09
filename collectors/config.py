@@ -50,7 +50,7 @@ GOOGLE_DAILY_COLUMNS = ["date", "campaign_name", "channel", "impressions", "clic
 
 META_CREATIVE_DAILY_COLUMNS = [
     "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재",
-    "spend", "impressions", "clicks", "link_clicks",
+    "spend", "impressions", "reach", "frequency", "clicks", "link_clicks",
     "purchase", "offline_purchase", "omni_purchase", "revenue",
     "ctr", "cvr", "cpa", "cpm",
 ]
