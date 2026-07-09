@@ -11,8 +11,22 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def _client() -> gspread.Client:
-    if config.GOOGLE_SA_JSON:
-        info = json.loads(config.GOOGLE_SA_JSON)
+    raw = config.GOOGLE_SA_JSON.strip() if config.GOOGLE_SA_JSON else ""
+    if raw:
+        try:
+            info = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"GOOGLE_SERVICE_ACCOUNT_JSON 파싱 실패 "
+                f"(길이={len(raw)}, 시작문자={raw[:1]!r}). "
+                f"다운받은 JSON 파일의 '{{' 부터 '}}' 까지 전체 내용을 넣어야 합니다. "
+                f"원본오류: {e}"
+            )
+        if info.get("type") != "service_account":
+            raise RuntimeError(
+                "JSON은 파싱됐지만 서비스계정 키가 아닙니다 "
+                f"(type={info.get('type')!r}). 올바른 서비스계정 JSON인지 확인하세요."
+            )
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
     elif config.GOOGLE_SA_FILE:
         creds = Credentials.from_service_account_file(config.GOOGLE_SA_FILE, scopes=SCOPES)
