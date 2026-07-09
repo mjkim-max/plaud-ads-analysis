@@ -3,7 +3,16 @@ name: collect-ads-data
 on:
   schedule:
     - cron: "0 21 * * *"   # 매일 06:00 KST (UTC 21:00)
-  workflow_dispatch:        # 수동 실행 버튼
+  workflow_dispatch:        # 수동 실행 버튼 (백필용 날짜 입력)
+    inputs:
+      since:
+        description: "시작일 YYYY-MM-DD (비우면 최근 30일)"
+        required: false
+        default: ""
+      until:
+        description: "종료일 YYYY-MM-DD (비우면 오늘)"
+        required: false
+        default: ""
 
 jobs:
   meta:
@@ -24,4 +33,6 @@ jobs:
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
           PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          META_SINCE: ${{ inputs.since }}
+          META_UNTIL: ${{ inputs.until }}
         run: python -m collectors.meta_creative_daily

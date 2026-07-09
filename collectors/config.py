@@ -17,6 +17,10 @@ META_AD_ACCOUNT_ID = _acc if _acc.startswith("act_") or not _acc else f"act_{_ac
 # 최근 며칠을 매 실행마다 다시 당겨 덮어쓸지 (늦게 붙는 전환 보정)
 LOOKBACK_DAYS = int(os.environ.get("META_LOOKBACK_DAYS", "30"))
 
+# 백필용 명시적 날짜 범위 (비우면 LOOKBACK_DAYS 사용)
+META_SINCE = os.environ.get("META_SINCE", "").strip()
+META_UNTIL = os.environ.get("META_UNTIL", "").strip()
+
 # 구매로 인정할 action_type 우선순위 (앞에서부터 발견되는 것 사용)
 PURCHASE_ACTION_TYPES = [
     "omni_purchase",

@@ -4,7 +4,8 @@
 필요 env: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, PLAUD_SHEET_ID,
           GOOGLE_SERVICE_ACCOUNT_JSON (또는 GOOGLE_APPLICATION_CREDENTIALS)
 """
-from datetime import date, timedelta
+import time
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import requests
@@ -12,6 +13,17 @@ import requests
 from collectors import config, sheets_io
 
 GRAPH = "https://graph.facebook.com"
+
+
+def _month_ranges(since: str, until: str):
+    """[since, until] 을 월 단위 (since, until) 청크로 분할."""
+    start = datetime.strptime(since, "%Y-%m-%d").date()
+    end = datetime.strptime(until, "%Y-%m-%d").date()
+    cur = start
+    while cur <= end:
+        nxt = date(cur.year + 1, 1, 1) if cur.month == 12 else date(cur.year, cur.month + 1, 1)
+        yield cur.isoformat(), min(nxt - timedelta(days=1), end).isoformat()
+        cur = nxt
 
 
 def _num(x) -> float:
@@ -53,9 +65,19 @@ def fetch_insights(since: str, until: str) -> list[dict]:
 
     rows: list[dict] = []
     while True:
-        r = requests.get(url, params=params, timeout=120)
-        r.raise_for_status()
-        payload = r.json()
+        payload = None
+        for attempt in range(4):
+            r = requests.get(url, params=params, timeout=120)
+            if r.status_code == 200:
+                payload = r.json()
+                break
+            # 레이트리밋/일시오류 → 지수 백오프 후 재시도
+            if r.status_code in (429, 500, 503) or "throttl" in r.text.lower():
+                time.sleep(2 ** attempt * 5)
+                continue
+            r.raise_for_status()
+        if payload is None:
+            raise RuntimeError(f"Meta API 재시도 실패: {url}")
         rows.extend(payload.get("data", []))
         nxt = payload.get("paging", {}).get("next")
         if not nxt:
@@ -95,13 +117,19 @@ def transform(raw: list[dict]) -> pd.DataFrame:
 
 
 def run(since: str = "", until: str = "") -> int:
+    since = since or config.META_SINCE
+    until = until or config.META_UNTIL
     if not until:
         until = date.today().isoformat()
     if not since:
         since = (date.today() - timedelta(days=config.LOOKBACK_DAYS)).isoformat()
 
-    print(f"[meta] insights 수집: {since} ~ {until}")
-    raw = fetch_insights(since, until)
+    print(f"[meta] insights 수집: {since} ~ {until} (월 단위 청크)")
+    raw: list[dict] = []
+    for m_since, m_until in _month_ranges(since, until):
+        chunk = fetch_insights(m_since, m_until)
+        print(f"[meta]   {m_since}~{m_until}: {len(chunk)}행")
+        raw.extend(chunk)
     df = transform(raw)
     print(f"[meta] 지출>0 소재-일 행: {len(df)}")
 
