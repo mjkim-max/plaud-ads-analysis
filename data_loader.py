@@ -69,7 +69,7 @@ def _sheet_id() -> str:
     return sid
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def _creative_map():
     """소재매핑 → (광고이름→소재 dict, 제외 광고이름 set). 대시보드가 실시간 반영."""
     try:
@@ -87,7 +87,7 @@ def _creative_map():
         return {}, set()
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_meta_daily() -> pd.DataFrame:
     """meta_소재일별 (라이브). 소재는 소재매핑 탭에서 실시간 조인, 제외 광고이름은 숨김."""
     ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")
