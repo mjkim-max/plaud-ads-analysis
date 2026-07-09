@@ -36,3 +36,18 @@ jobs:
           META_SINCE: ${{ inputs.since }}
           META_UNTIL: ${{ inputs.until }}
         run: python -m collectors.meta_creative_daily
+
+      - name: Collect Google campaign-daily → Sheets
+        continue-on-error: true   # 구글 미설정이어도 메타 수집은 성공 처리
+        env:
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          META_SINCE: ${{ inputs.since }}
+          META_UNTIL: ${{ inputs.until }}
+        run: python -m collectors.google_campaign_daily

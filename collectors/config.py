@@ -33,9 +33,20 @@ REVENUE_TYPES = ["omni_purchase", "offsite_conversion.fb_pixel_purchase", "purch
 # 구매목표로 인정할 캠페인 objective (판매/전환 계열만; 트래픽·인지 등은 제외)
 PURCHASE_OBJECTIVES = {"OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES"}
 
+# ── Google Ads API ──
+GADS_API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "v18")
+GADS_DEVELOPER_TOKEN = os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", "")
+GADS_CLIENT_ID = os.environ.get("GOOGLE_ADS_CLIENT_ID", "")
+GADS_CLIENT_SECRET = os.environ.get("GOOGLE_ADS_CLIENT_SECRET", "")
+GADS_REFRESH_TOKEN = os.environ.get("GOOGLE_ADS_REFRESH_TOKEN", "")
+GADS_LOGIN_CUSTOMER_ID = os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").replace("-", "").strip()
+GADS_CUSTOMER_ID = os.environ.get("GOOGLE_ADS_CUSTOMER_ID", "").replace("-", "").strip()
+
 # 탭 이름
 TAB_META_CREATIVE_DAILY = "meta_소재일별"
 TAB_CREATIVE_MAP = "소재매핑"
+TAB_GOOGLE_DAILY = "google_일별"
+GOOGLE_DAILY_COLUMNS = ["date", "campaign_name", "impressions", "clicks", "cost"]
 
 META_CREATIVE_DAILY_COLUMNS = [
     "date", "campaign_name", "adset_name", "objective", "ad_id", "ad_name", "소재",
