@@ -90,7 +90,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -346,3 +346,50 @@ elif view == VIEWS[5]:
             sc.update_layout(height=380, margin=dict(t=20, b=10),
                              xaxis_title=f"구글 {gmet}", yaxis_title=f"메타 {mmet}")
             st.plotly_chart(sc, use_container_width=True, key="cross_sc")
+
+# ─────────────────────────── ⑦ 제작×집행 매트릭스 ───────────────────────────
+elif view == VIEWS[6]:
+    st.subheader("제작월 × 집행월 매트릭스")
+    st.caption("행=제작월(소재 만든 달) · 열=집행월 · 셀=선택 지표 · 합계 포함. "
+               "(제작 이전 집행은 없어 상삼각은 비어있음)")
+    metric = st.selectbox("지표", ["노출", "클릭", "전환", "지출", "CPM", "CPC", "CVR", "CPA"], key="mx_metric")
+
+    prod = cs.set_index("소재")["최초집행"].dt.to_period("M").astype(str)
+    base = df.copy()
+    base["제작월"] = base["소재"].map(prod)
+    base["집행월"] = base["date"].dt.to_period("M").astype(str)
+    base = base.dropna(subset=["제작월"])
+    gb = base.groupby(["제작월", "집행월"]).agg(
+        노출=("impressions", "sum"), 클릭=("clicks", "sum"),
+        전환=("omni_purchase", "sum"), 지출=("spend", "sum"))
+    months = sorted(set(base["제작월"]) | set(base["집행월"]))
+    P = {k: gb[k].unstack("집행월").reindex(index=months, columns=months).fillna(0)
+         for k in ["노출", "클릭", "전환", "지출"]}
+
+    def _safe(num, den):
+        if isinstance(den, (pd.Series, pd.DataFrame)):
+            return (num / den).where(den > 0)
+        return (num / den) if den else float("nan")
+
+    def _mfn(imp, clk, conv, sp):
+        return {"노출": imp, "클릭": clk, "전환": conv, "지출": sp,
+                "CPM": _safe(sp * 1000, imp), "CPC": _safe(sp, clk),
+                "CVR": _safe(conv * 100, clk), "CPA": _safe(sp, conv)}[metric]
+
+    mat = _mfn(P["노출"], P["클릭"], P["전환"], P["지출"])
+    empty = (P["노출"] + P["클릭"] + P["전환"] + P["지출"]) == 0
+    mat = mat.mask(empty)
+    row_tot = _mfn(P["노출"].sum(1), P["클릭"].sum(1), P["전환"].sum(1), P["지출"].sum(1))
+    col_tot = _mfn(P["노출"].sum(0), P["클릭"].sum(0), P["전환"].sum(0), P["지출"].sum(0))
+    grand = _mfn(P["노출"].values.sum(), P["클릭"].values.sum(),
+                 P["전환"].values.sum(), P["지출"].values.sum())
+    mat["합계"] = row_tot
+    col_tot["합계"] = grand
+    mat.loc["합계"] = col_tot
+    def _cell(v):
+        if pd.isna(v):
+            return ""
+        return f"{v:.2f}" if metric == "CVR" else f"{v:,.0f}"
+
+    disp = mat.apply(lambda c: c.map(_cell)).reset_index()
+    st.dataframe(disp, use_container_width=True, hide_index=True, height=600)
