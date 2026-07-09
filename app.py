@@ -184,17 +184,19 @@ with tabs[2]:
     live = csm["최종집행"] >= (max_date - pd.Timedelta(days=14))
     summ = csm.groupby("제작월").agg(
         제작소재수량=("소재", "nunique"), 지출=("지출", "sum"), 노출=("노출", "sum"),
-        클릭=("클릭", "sum"), 전환=("구매_전체", "sum"))
+        클릭=("클릭", "sum"), 전환=("구매_전체", "sum"), 평균수명=("수명일", "mean"))
     lc = csm[live].groupby("제작월")["소재"].nunique()
     summ["LIVE소재수량"] = lc.reindex(summ.index).fillna(0).astype(int)
     summ["CPA"] = (summ["지출"] / summ["전환"]).where(summ["전환"] > 0)
     summ["CTR"] = (summ["클릭"] / summ["노출"] * 100).where(summ["노출"] > 0)
     summ["CVR"] = (summ["전환"] / summ["클릭"] * 100).where(summ["클릭"] > 0)
     summ = summ.reset_index()
-    show = summ[["제작월", "제작소재수량", "LIVE소재수량", "지출", "노출", "클릭", "전환", "CPA", "CTR", "CVR"]].copy()
+    show = summ[["제작월", "제작소재수량", "LIVE소재수량", "평균수명", "지출", "노출", "클릭", "전환", "CPA", "CTR", "CVR"]].copy()
     show["지출"] = show["지출"].round(0)
     show["CPA"] = show["CPA"].round(0)
+    show["평균수명"] = show["평균수명"].round(0)
     st.dataframe(show, use_container_width=True, hide_index=True, column_config={
+        "평균수명": st.column_config.NumberColumn("평균수명(일)", format="%.0f"),
         "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
         "노출": st.column_config.NumberColumn(format="localized"),
         "클릭": st.column_config.NumberColumn(format="localized"),
@@ -229,9 +231,8 @@ with tabs[3]:
     st.caption("특정 월에 처음 집행된(=만든) 소재들을 한 묶음으로, 그 이후 지표가 어떻게 변하는지.")
     cs2 = cs.copy()
     cs2["제작월"] = cs2["최초집행"].dt.to_period("M").astype(str)
-    months = sorted(cs2["제작월"].dropna().unique())
-    default_i = len(months) - 1 if months else 0
-    mo = st.selectbox("제작월 선택", months, index=default_i)
+    months = sorted(cs2["제작월"].dropna().unique(), reverse=True)
+    mo = st.selectbox("제작월 선택", months, index=0)
     cohort = cs2[cs2["제작월"] == mo]["소재"].tolist()
     sub = df[df["소재"].isin(cohort)]
     st.caption(f"{mo} 제작 소재 {len(cohort)}개")
