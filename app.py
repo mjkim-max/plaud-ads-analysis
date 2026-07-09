@@ -90,7 +90,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -404,3 +404,67 @@ elif view == VIEWS[6]:
 
     disp = mat.apply(lambda c: c.map(_cell)).reset_index()
     st.dataframe(disp, use_container_width=True, hide_index=True, height=600)
+
+# ─────────────────────────── ⑧ 채널 매출·ROAS ───────────────────────────
+elif view == VIEWS[7]:
+    st.subheader("채널 매출 · ROAS")
+    sales = dl.load_channel_sales()
+    if sales.empty:
+        st.warning("채널별 매출 데이터가 없습니다.")
+    else:
+        if isinstance(rng, tuple) and len(rng) == 2:
+            sales = sales[(sales["date"].dt.date >= rng[0]) & (sales["date"].dt.date <= rng[1])]
+        CH_COLORS = {"자사몰": BLUE, "네이버": GREEN, "쿠팡": AMBER, "기타": GRAY}
+        order = ["자사몰", "네이버", "쿠팡", "기타"]
+
+        # ── A. 비중 ──
+        st.markdown("### A. 채널 매출 비중")
+        by = sales.groupby("channel")["sales"].sum().reindex(order).fillna(0)
+        a1, a2 = st.columns([2, 3])
+        with a1:
+            fig = go.Figure(go.Pie(labels=list(by.index), values=list(by.values), hole=0.5,
+                                   marker_colors=[CH_COLORS[c] for c in by.index]))
+            fig.update_layout(height=320, margin=dict(t=30, b=10), title="기간 합계 비중")
+            st.plotly_chart(fig, use_container_width=True, key="ch_donut")
+        with a2:
+            mo = sales.set_index("date").groupby("channel")["sales"].resample("MS").sum().reset_index()
+            fig = px.area(mo, x="date", y="sales", color="channel", color_discrete_map=CH_COLORS,
+                          category_orders={"channel": order})
+            fig.update_layout(height=320, margin=dict(t=30, b=10), title="월별 채널 판매(누적)", yaxis_title="판매 건수")
+            st.plotly_chart(fig, use_container_width=True, key="ch_area")
+
+        # ── B. 추이 ──
+        st.markdown("### B. 채널별 판매 추이")
+        fl = st.radio("주기", ["주", "월"], horizontal=True, index=0, key="sales_freq")
+        tr = sales.set_index("date").groupby("channel")["sales"].resample({"주": "W-MON", "월": "MS"}[fl]).sum().reset_index()
+        fig = px.line(tr, x="date", y="sales", color="channel", color_discrete_map=CH_COLORS,
+                      category_orders={"channel": order}, markers=True)
+        fig.update_layout(height=360, margin=dict(t=20, b=10), yaxis_title="판매 건수")
+        st.plotly_chart(fig, use_container_width=True, key="ch_line")
+
+        # ── C. 자사몰 효율 (ROAS) ──
+        st.markdown("### C. 자사몰 효율 — 광고비 vs 자사몰 판매")
+        st.caption("광고는 자사몰에 귀인(가정). 총 광고비(메타+구글) 대비 자사몰 판매·건당 광고비.")
+        g = dl.load_google_daily()
+        if not g.empty and isinstance(rng, tuple) and len(rng) == 2:
+            g = g[(g["date"].dt.date >= rng[0]) & (g["date"].dt.date <= rng[1])]
+        msp = df.groupby("date")["spend"].sum().rename("meta")
+        gsp = (g.groupby("date")["cost"].sum() if not g.empty else pd.Series(dtype=float)).rename("google")
+        jmall = sales[sales["channel"] == "자사몰"].groupby("date")["sales"].sum().rename("자사몰판매")
+        daily = pd.concat([msp, gsp, jmall], axis=1).fillna(0)
+        daily["광고비"] = daily["meta"] + daily["google"]
+        wk = daily.resample("W-MON").sum()
+        wk = wk[wk["광고비"] > 0]
+        wk["건당광고비"] = (wk["광고비"] / wk["자사몰판매"]).where(wk["자사몰판매"] > 0)
+
+        fig = go.Figure()
+        fig.add_bar(x=wk.index, y=wk["광고비"], name="광고비(메타+구글)", marker_color="#bfdbfe")
+        fig.add_scatter(x=wk.index, y=wk["자사몰판매"], name="자사몰 판매", mode="lines+markers",
+                        line=dict(color=BLUE, width=3), yaxis="y2")
+        fig.update_layout(height=360, margin=dict(t=30, b=10), yaxis=dict(title="광고비"),
+                          yaxis2=dict(title="자사몰 판매(건)", overlaying="y", side="right"),
+                          legend=dict(orientation="h", y=1.12))
+        st.plotly_chart(fig, use_container_width=True, key="roas_ts")
+        fig2 = go.Figure(go.Scatter(x=wk.index, y=wk["건당광고비"], mode="lines+markers", line=dict(color=RED, width=3)))
+        fig2.update_layout(height=300, margin=dict(t=30, b=10), title="자사몰 판매 1건당 광고비 (₩)")
+        st.plotly_chart(fig2, use_container_width=True, key="roas_cpa")

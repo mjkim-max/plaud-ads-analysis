@@ -134,6 +134,46 @@ def load_google_daily() -> pd.DataFrame:
     return df.dropna(subset=["date"])
 
 
+@st.cache_data(ttl=300)
+def load_channel_sales() -> pd.DataFrame:
+    """채널별 매출 (가로형·연도블록) → long df: date·channel·sales(판매 건수).
+    채널 = 쿠팡·네이버·자사몰·기타. 전체 매출 행은 제외(=합계)."""
+    try:
+        ws = _gs_client().open_by_key(_sheet_id()).worksheet("채널별 매출")
+    except Exception:
+        return pd.DataFrame()
+    vals = ws.get_all_values()
+    channels = {"쿠팡", "네이버", "자사몰", "기타"}
+    rec, year, date_cols = [], None, None
+    for row in vals:
+        a = row[0].strip() if row else ""
+        if a.endswith("년") and a[:-1].isdigit():
+            year = int(a[:-1])
+            date_cols = []
+            for j in range(1, len(row)):
+                md = str(row[j]).strip()
+                if "/" in md:
+                    try:
+                        mo, dy = md.split("/")
+                        date_cols.append((j, int(mo), int(dy)))
+                    except ValueError:
+                        pass
+            continue
+        if a in channels and year and date_cols:
+            for j, mo, dy in date_cols:
+                v = str(row[j]).strip() if j < len(row) else ""
+                try:
+                    dt = pd.Timestamp(year=year, month=mo, day=dy)
+                except ValueError:
+                    continue
+                rec.append({"date": dt, "channel": a, "sales": pd.to_numeric(v, errors="coerce")})
+    df = pd.DataFrame(rec)
+    if df.empty:
+        return df
+    df["sales"] = df["sales"].fillna(0)
+    return df
+
+
 @st.cache_data(ttl=3600)
 def load_weekly_campaigns() -> pd.DataFrame:
     """주별 신설/종료/동시활성 (가로형 → 세로형 변환)."""
