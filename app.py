@@ -91,7 +91,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-tabs = st.tabs(["① 개요", "② 소재 분석", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질"])
+tabs = st.tabs(["① 개요", "② 소재 분석", "③ 월별 소재 컨디션", "④ 제작월별 진단", "⑤ 메타 효율 추이", "⑥ 소재 생존·품질"])
 
 # ─────────────────────────── ① 개요 ───────────────────────────
 with tabs[0]:
@@ -175,8 +175,56 @@ with tabs[1]:
     fig.update_layout(height=420, margin=dict(t=20, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
-# ─────────────────────────── ③ 제작월별 진단 ───────────────────────────
+# ─────────────────────────── ③ 월별 소재 컨디션 ───────────────────────────
 with tabs[2]:
+    st.subheader("월별 소재 컨디션")
+    st.caption("제작월별 만든 소재 수 · 현재 LIVE 수 · 성과 합계. (LIVE = 최근 14일 내 집행)")
+    csm = cs.copy()
+    csm["제작월"] = csm["최초집행"].dt.to_period("M").astype(str)
+    live = csm["최종집행"] >= (max_date - pd.Timedelta(days=14))
+    summ = csm.groupby("제작월").agg(
+        제작소재수량=("소재", "nunique"), 지출=("지출", "sum"), 노출=("노출", "sum"),
+        클릭=("클릭", "sum"), 전환=("구매_전체", "sum"))
+    lc = csm[live].groupby("제작월")["소재"].nunique()
+    summ["LIVE소재수량"] = lc.reindex(summ.index).fillna(0).astype(int)
+    summ["CPA"] = (summ["지출"] / summ["전환"]).where(summ["전환"] > 0)
+    summ["CTR"] = (summ["클릭"] / summ["노출"] * 100).where(summ["노출"] > 0)
+    summ["CVR"] = (summ["전환"] / summ["클릭"] * 100).where(summ["클릭"] > 0)
+    summ = summ.reset_index()
+    show = summ[["제작월", "제작소재수량", "LIVE소재수량", "지출", "노출", "클릭", "전환", "CPA", "CTR", "CVR"]].copy()
+    show["지출"] = show["지출"].round(0)
+    show["CPA"] = show["CPA"].round(0)
+    st.dataframe(show, use_container_width=True, hide_index=True, column_config={
+        "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+        "노출": st.column_config.NumberColumn(format="localized"),
+        "클릭": st.column_config.NumberColumn(format="localized"),
+        "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
+        "CTR": st.column_config.NumberColumn(format="%.2f%%"),
+        "CVR": st.column_config.NumberColumn(format="%.2f%%")})
+
+    b, l = st.columns(2)
+    with b:
+        st.markdown("**제작월별 소재 수 (제작 vs LIVE)**")
+        f = go.Figure()
+        f.add_bar(x=summ["제작월"], y=summ["제작소재수량"], name="제작", marker_color=BLUE)
+        f.add_bar(x=summ["제작월"], y=summ["LIVE소재수량"], name="LIVE", marker_color=GREEN)
+        f.update_layout(height=340, barmode="group", margin=dict(t=30, b=10),
+                        legend=dict(orientation="h", y=1.15), yaxis_title="소재 수")
+        st.plotly_chart(f, use_container_width=True)
+    with l:
+        st.markdown("**제작월별 CPA / CTR**")
+        f = go.Figure()
+        f.add_scatter(x=summ["제작월"], y=summ["CPA"], name="CPA", mode="lines+markers",
+                      line=dict(color=RED, width=3))
+        f.add_scatter(x=summ["제작월"], y=summ["CTR"], name="CTR%", mode="lines+markers",
+                      line=dict(color=BLUE), yaxis="y2")
+        f.update_layout(height=340, margin=dict(t=30, b=10), yaxis=dict(title="CPA"),
+                        yaxis2=dict(title="CTR%", overlaying="y", side="right"),
+                        legend=dict(orientation="h", y=1.15))
+        st.plotly_chart(f, use_container_width=True)
+
+# ─────────────────────────── ④ 제작월별 진단 ───────────────────────────
+with tabs[3]:
     st.subheader("제작월별 소재 진단")
     st.caption("특정 월에 처음 집행된(=만든) 소재들을 한 묶음으로, 그 이후 지표가 어떻게 변하는지.")
     cs2 = cs.copy()
@@ -186,9 +234,7 @@ with tabs[2]:
     mo = st.selectbox("제작월 선택", months, index=default_i)
     cohort = cs2[cs2["제작월"] == mo]["소재"].tolist()
     sub = df[df["소재"].isin(cohort)]
-    st.markdown(f"**{mo} 제작 소재 {len(cohort)}개 — 전체 합계**")
-    render_totals(sub)
-    st.divider()
+    st.caption(f"{mo} 제작 소재 {len(cohort)}개")
 
     freq_label = st.radio("주기", ["주", "월"], horizontal=True, index=0, key="cohort_freq")
     freq = {"주": "W-MON", "월": "MS"}[freq_label]
@@ -229,8 +275,8 @@ with tabs[2]:
                                 "CTR": st.column_config.NumberColumn(format="%.2f%%"),
                                 "CVR": st.column_config.NumberColumn(format="%.2f%%")})
 
-# ─────────────────────────── ④ 메타 효율 추이 ───────────────────────────
-with tabs[3]:
+# ─────────────────────────── ⑤ 메타 효율 추이 ───────────────────────────
+with tabs[4]:
     st.subheader("메타 효율 시계열")
     freq_label = st.radio("주기", ["일", "주", "월"], horizontal=True, index=1, key="eff_freq")
     freq = {"일": "D", "주": "W-MON", "월": "MS"}[freq_label]
@@ -256,8 +302,8 @@ with tabs[3]:
         f.update_layout(height=300, margin=dict(t=36, b=10), title="CPM (매체 단가)")
         st.plotly_chart(f, use_container_width=True)
 
-# ─────────────────────────── ⑤ 소재 생존·품질 ───────────────────────────
-with tabs[4]:
+# ─────────────────────────── ⑥ 소재 생존·품질 ───────────────────────────
+with tabs[5]:
     st.subheader("소재 생존곡선 (수명 ≥ N일 비율)")
     life = cs["수명일"].dropna()
     ks = list(range(0, int(min(life.max(), 180)) + 1, 3)) if len(life) else [0]
