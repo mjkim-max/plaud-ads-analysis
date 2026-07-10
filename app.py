@@ -582,3 +582,7 @@ elif view == VIEWS[7]:
     show_group("③", "③ 안 돌았지만 예산 미달 — 추가 기회 필요", f"현재 안 돎 + 가능성 낮음 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 기회 부여).")
     show_group("④", "④ 안 돌았고 예산 충분 — 가능성 없음", f"현재 안 돎 + 가능성 낮음 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
     show_group("⑤", "⑤ 계약종료 — 집행 불가", "계약 만료로 못 도는 소재(성과 무관). `소재_계약종료` 시트 탭에서 관리 → ①~④에서 자동 제외.")
+    st.link_button(
+        "📝 계약종료 리스트 편집 (구글시트 열기)",
+        "https://docs.google.com/spreadsheets/d/1l6GB0Bow6m2wimf-aNZJwnkoAqtwIpqPX6en8Wx2kcg/edit?gid=1487400031#gid=1487400031",
+    )
