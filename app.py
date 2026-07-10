@@ -90,7 +90,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS", "⑨ 보고(월별 종합)"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -468,3 +468,58 @@ elif view == VIEWS[7]:
         fig2 = go.Figure(go.Scatter(x=wk.index, y=wk["건당광고비"], mode="lines+markers", line=dict(color=RED, width=3)))
         fig2.update_layout(height=300, margin=dict(t=30, b=10), title="자사몰 판매 1건당 광고비 (₩)")
         st.plotly_chart(fig2, use_container_width=True, key="roas_cpa")
+
+# ─────────────────────────── ⑨ 보고 (월별 종합) ───────────────────────────
+elif view == VIEWS[8]:
+    st.subheader("보고 — 월별 종합 요약")
+    g = dl.load_google_daily()
+    sales = dl.load_channel_sales()
+    if isinstance(rng, tuple) and len(rng) == 2:
+        if not g.empty:
+            g = g[(g["date"].dt.date >= rng[0]) & (g["date"].dt.date <= rng[1])]
+        if not sales.empty:
+            sales = sales[(sales["date"].dt.date >= rng[0]) & (sales["date"].dt.date <= rng[1])]
+
+    md = df.copy(); md["월"] = md["date"].dt.to_period("M").astype(str)
+    mm = md.groupby("월").agg(메타지출=("spend", "sum"), 노출=("impressions", "sum"),
+                             클릭=("clicks", "sum"), 구매=("omni_purchase", "sum"))
+    if not g.empty:
+        gd = g.copy(); gd["월"] = gd["date"].dt.to_period("M").astype(str)
+        gg = gd.groupby("월")["cost"].sum().rename("구글비용")
+    else:
+        gg = pd.Series(dtype=float, name="구글비용")
+    if not sales.empty:
+        sd = sales.copy(); sd["월"] = sd["date"].dt.to_period("M").astype(str)
+        sp = sd.pivot_table(index="월", columns="channel", values="sales", aggfunc="sum")
+    else:
+        sp = pd.DataFrame()
+
+    rep = mm.join(gg, how="outer").join(sp, how="outer").fillna(0).sort_index()
+    for c in ["자사몰", "네이버", "쿠팡"]:
+        if c not in rep.columns:
+            rep[c] = 0
+    rep["총광고비"] = rep["메타지출"] + rep["구글비용"]
+    rep["3채널판매"] = rep["자사몰"] + rep["네이버"] + rep["쿠팡"]
+    rep["메타CPA"] = (rep["메타지출"] / rep["구매"]).where(rep["구매"] > 0)
+    rep["메타CTR"] = (rep["클릭"] / rep["노출"] * 100).where(rep["노출"] > 0)
+    rep["자사몰건당광고비"] = (rep["총광고비"] / rep["자사몰"]).where(rep["자사몰"] > 0)
+
+    # 기간 KPI
+    tot_ad, jm, ch3 = rep["총광고비"].sum(), rep["자사몰"].sum(), rep["3채널판매"].sum()
+    omni, mspend = rep["구매"].sum(), rep["메타지출"].sum()
+    k = st.columns(5)
+    k[0].metric("총 광고비", f"₩{tot_ad/1e8:.2f}억")
+    k[1].metric("3채널 판매", f"{int(ch3):,}건")
+    k[2].metric("자사몰 판매", f"{int(jm):,}건")
+    k[3].metric("자사몰 건당광고비", f"₩{tot_ad/jm/1e4:,.1f}만" if jm else "-")
+    k[4].metric("메타 CPA", f"₩{mspend/omni/1e4:,.1f}만" if omni else "-")
+    st.divider()
+
+    cols = ["메타지출", "구글비용", "총광고비", "자사몰", "네이버", "쿠팡", "3채널판매", "메타CPA", "메타CTR", "자사몰건당광고비"]
+    disp = rep[cols].reset_index().rename(columns={"index": "월"})
+    for c in ["메타지출", "구글비용", "총광고비", "메타CPA", "자사몰건당광고비"]:
+        disp[c] = disp[c].round(0)
+    won = {c: st.column_config.NumberColumn(c, format="localized") for c in ["메타지출", "구글비용", "총광고비", "메타CPA", "자사몰건당광고비"]}
+    won["메타CTR"] = st.column_config.NumberColumn(format="%.2f%%")
+    st.dataframe(disp, use_container_width=True, hide_index=True, height=520, column_config=won)
+    st.caption("월별: 메타·구글 광고비 + 채널 판매 + 메타 CPA/CTR + 자사몰 건당 광고비. 보고서용 종합표.")
