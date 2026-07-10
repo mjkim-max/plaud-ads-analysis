@@ -543,12 +543,18 @@ elif view == VIEWS[7]:
         _img = c["소재"].astype(str).str.strip().str.startswith("[이미지]")
         st.caption(f"[이미지] 소재 {int(_img.sum())}개 제외됨")
         c = c[~_img]
+
+    # 계약종료(집행 불가) 소재: 성과 기준 분류(①~④)에서 빼고 ⑤로 별도 표시
+    ended = dl.load_contract_ended()
+    is_ended = c["소재"].astype(str).str.strip().isin(ended)
+
     active = c["최종집행"] >= (max_date - pd.Timedelta(days=active_days))
     good = c["CPA"].notna() & (c["CPA"] <= cpa_thr)
     c["상태"] = "④"
     c.loc[~active & ~good & (c["지출"] < budget_thr), "상태"] = "③"
     c.loc[~active & good, "상태"] = "②"
     c.loc[active, "상태"] = "①"
+    c.loc[is_ended, "상태"] = "⑤"   # 계약종료는 성과 무관하게 우선 분류
 
     cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
             "지출", "구매_전체", "CPA", "CTR", "CVR"]
@@ -575,3 +581,4 @@ elif view == VIEWS[7]:
     show_group("②", "② 안 돌지만 가능성 있는 소재", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
     show_group("③", "③ 안 돌았지만 예산 미달 — 추가 기회 필요", f"현재 안 돎 + 가능성 낮음 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 기회 부여).")
     show_group("④", "④ 안 돌았고 예산 충분 — 가능성 없음", f"현재 안 돎 + 가능성 낮음 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
+    show_group("⑤", "⑤ 계약종료 — 집행 불가", "계약 만료로 못 도는 소재(성과 무관). `소재_계약종료` 시트 탭에서 관리 → ①~④에서 자동 제외.")

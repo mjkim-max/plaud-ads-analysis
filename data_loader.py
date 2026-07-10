@@ -88,6 +88,20 @@ def _creative_map():
 
 
 @st.cache_data(ttl=300)
+def load_contract_ended() -> set:
+    """소재_계약종료 탭 → 계약종료(집행 불가) 소재 이름 set. 탭 없으면 빈 set.
+    열: 소재(필수) / 종료일·사유(선택). 시트에서 직접 관리하면 대시보드가 즉시 반영."""
+    try:
+        ws = _gs_client().open_by_key(_sheet_id()).worksheet("소재_계약종료")
+        m = pd.DataFrame(ws.get_all_records())
+        if m.empty or "소재" not in m.columns:
+            return set()
+        return {s for s in m["소재"].astype(str).str.strip() if s}
+    except Exception:
+        return set()
+
+
+@st.cache_data(ttl=300)
 def load_meta_daily() -> pd.DataFrame:
     """meta_소재일별 (라이브). 소재는 소재매핑 탭에서 실시간 조인, 제외 광고이름은 숨김."""
     ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")
