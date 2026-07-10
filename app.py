@@ -216,23 +216,23 @@ elif view == VIEWS[2]:
         with d2:
             ctr_cvr_chart(one, "주별 CTR / CVR", "drl_cc")
 
-        # 이 소재의 빈도(도달 대비 노출) vs CTR — 빈도 쌓이며 CTR 떨어지면 소진(피로)
-        if "reach" in df.columns:
-            fq = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
-                노출=("impressions", "sum"), 도달=("reach", "sum"), 클릭=("clicks", "sum")).reset_index()
-            fq = fq[fq["노출"] > 0]
-            fq["빈도"] = (fq["노출"] / fq["도달"]).where(fq["도달"] > 0)
-            fq["CTR"] = (fq["클릭"] / fq["노출"] * 100).where(fq["노출"] > 0)
-            st.markdown("**주별 빈도 vs CTR — 소재 소진(피로) 진단**")
-            fig = go.Figure()
-            fig.add_bar(x=fq["date"], y=fq["빈도"], name="빈도", marker_color="#fde68a")
-            fig.add_scatter(x=fq["date"], y=fq["CTR"], name="CTR%", mode="lines+markers",
-                            line=dict(color=BLUE, width=3), yaxis="y2")
-            fig.update_layout(height=320, margin=dict(t=44, b=10), yaxis=dict(title="빈도"),
-                              yaxis2=dict(title="CTR%", overlaying="y", side="right"),
-                              legend=dict(orientation="h", y=1.14, x=0))
-            st.plotly_chart(fig, use_container_width=True, key="drl_fq")
-            st.caption("빈도가 쌓이는데 CTR이 떨어지면 → 그 소재가 같은 사람에게 과노출돼 소진(피로)되는 신호.")
+        # 누적 노출 vs CTR — 노출이 쌓이며 CTR 떨어지면 소재 소진(피로)
+        fq = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
+            노출=("impressions", "sum"), 클릭=("clicks", "sum")).reset_index()
+        fq = fq[fq["노출"] > 0]
+        fq["누적노출"] = fq["노출"].cumsum()
+        fq["CTR"] = (fq["클릭"] / fq["노출"] * 100).where(fq["노출"] > 0)
+        st.markdown("**누적 노출 vs CTR — 소재 소진(피로) 진단**")
+        fig = go.Figure()
+        fig.add_bar(x=fq["date"], y=fq["누적노출"], name="누적 노출", marker_color="#fde68a")
+        fig.add_scatter(x=fq["date"], y=fq["CTR"], name="CTR%", mode="lines+markers",
+                        line=dict(color=BLUE, width=3), yaxis="y2")
+        fig.update_layout(height=320, margin=dict(t=44, b=10), yaxis=dict(title="누적 노출"),
+                          yaxis2=dict(title="CTR%", overlaying="y", side="right"),
+                          legend=dict(orientation="h", y=1.14, x=0))
+        st.plotly_chart(fig, use_container_width=True, key="drl_fq")
+        st.caption("누적 노출이 쌓이는데 CTR이 떨어지면 → 소재 소진(피로). "
+                   "※ 개인별 누적 빈도는 일별 도달 중복 때문에 정확 산출 불가라 누적 노출로 봄.")
 
 # ─────────────────────────── ④ 메타 효율 추이 ───────────────────────────
 elif view == VIEWS[3]:
