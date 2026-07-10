@@ -115,7 +115,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(3분류)"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -521,3 +521,47 @@ elif view == VIEWS[6]:
     won["메타CTR"] = st.column_config.NumberColumn(format="%.2f%%")
     st.dataframe(disp, use_container_width=True, hide_index=True, height=520, column_config=won)
     st.caption("월별: 메타·구글 광고비 + 채널 판매 + 메타 CPA/CTR + 자사몰 건당 광고비. 보고서용 종합표.")
+
+# ─────────────────────────── ⑧ 소재 상태 (3분류) ───────────────────────────
+elif view == VIEWS[7]:
+    st.subheader("소재 상태 분류")
+    st.caption("기준은 직접 조절 — 활성일(최근 N일 집행=돌고있는), CPA(이 값 이하=가능성 있음).")
+    cc = st.columns(2)
+    active_days = cc[0].number_input("활성 기준(일)", 1, 90, 14, step=1,
+                                     help="최종 집행이 최근 N일 이내면 '지금 돌고있는'")
+    med = cs.loc[cs["CPA"].notna(), "CPA"].median()
+    cpa_thr = cc[1].number_input("가능성 CPA 기준(₩)", 0, 10_000_000,
+                                 int(med) if not pd.isna(med) else 120000, step=10000,
+                                 help="안 도는 소재 중 CPA가 이 값 이하면 '가능성 있음'")
+
+    c = cs.copy()
+    active = c["최종집행"] >= (max_date - pd.Timedelta(days=active_days))
+    good = c["CPA"].notna() & (c["CPA"] <= cpa_thr)
+    c["상태"] = "③"
+    c.loc[good & ~active, "상태"] = "②"
+    c.loc[active, "상태"] = "①"
+
+    cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
+            "지출", "구매_전체", "CPA", "CTR", "CVR"]
+    cfg = {
+        "노출": st.column_config.NumberColumn(format="localized"),
+        "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+        "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
+        "CTR": st.column_config.NumberColumn(format="%.2f%%"),
+        "CVR": st.column_config.NumberColumn(format="%.2f%%"),
+    }
+
+    def show_group(code, title, hint):
+        sub = c[c["상태"] == code][cols].copy()
+        sub["최초집행"] = sub["최초집행"].dt.date
+        sub["최종집행"] = sub["최종집행"].dt.date
+        sub["지출"] = sub["지출"].round(0)
+        sub["CPA"] = sub["CPA"].round(0)
+        sub = sub.sort_values("지출", ascending=False).reset_index(drop=True)
+        st.markdown(f"### {title} — {len(sub)}개")
+        st.caption(hint)
+        st.dataframe(sub, use_container_width=True, hide_index=True, height=300, column_config=cfg)
+
+    show_group("①", "① 지금 돌고있는 소재", f"최근 {active_days}일 내 집행.")
+    show_group("②", "② 안 돌지만 가능성 있는 소재", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
+    show_group("③", "③ 안 돌고 가능성 없는 소재", f"현재 안 돎 + CPA > ₩{cpa_thr:,} 또는 구매 없음 (정리 대상).")
