@@ -90,7 +90,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS", "⑨ 보고(월별 종합)", "⑩ 빈도·도달(과노출)"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS", "⑨ 보고(월별 종합)"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -215,6 +215,24 @@ elif view == VIEWS[2]:
             spend_cpa_chart(one, "주별 지출 vs CPA", "drl_sc")
         with d2:
             ctr_cvr_chart(one, "주별 CTR / CVR", "drl_cc")
+
+        # 이 소재의 빈도(도달 대비 노출) vs CTR — 빈도 쌓이며 CTR 떨어지면 소진(피로)
+        if "reach" in df.columns:
+            fq = df[df["소재"] == sel].set_index("date").resample("W-MON").agg(
+                노출=("impressions", "sum"), 도달=("reach", "sum"), 클릭=("clicks", "sum")).reset_index()
+            fq = fq[fq["노출"] > 0]
+            fq["빈도"] = (fq["노출"] / fq["도달"]).where(fq["도달"] > 0)
+            fq["CTR"] = (fq["클릭"] / fq["노출"] * 100).where(fq["노출"] > 0)
+            st.markdown("**주별 빈도 vs CTR — 소재 소진(피로) 진단**")
+            fig = go.Figure()
+            fig.add_bar(x=fq["date"], y=fq["빈도"], name="빈도", marker_color="#fde68a")
+            fig.add_scatter(x=fq["date"], y=fq["CTR"], name="CTR%", mode="lines+markers",
+                            line=dict(color=BLUE, width=3), yaxis="y2")
+            fig.update_layout(height=320, margin=dict(t=44, b=10), yaxis=dict(title="빈도"),
+                              yaxis2=dict(title="CTR%", overlaying="y", side="right"),
+                              legend=dict(orientation="h", y=1.14, x=0))
+            st.plotly_chart(fig, use_container_width=True, key="drl_fq")
+            st.caption("빈도가 쌓이는데 CTR이 떨어지면 → 그 소재가 같은 사람에게 과노출돼 소진(피로)되는 신호.")
 
 # ─────────────────────────── ④ 메타 효율 추이 ───────────────────────────
 elif view == VIEWS[3]:
@@ -523,45 +541,3 @@ elif view == VIEWS[8]:
     won["메타CTR"] = st.column_config.NumberColumn(format="%.2f%%")
     st.dataframe(disp, use_container_width=True, hide_index=True, height=520, column_config=won)
     st.caption("월별: 메타·구글 광고비 + 채널 판매 + 메타 CPA/CTR + 자사몰 건당 광고비. 보고서용 종합표.")
-
-# ─────────────────────────── ⑩ 빈도·도달 (과노출 진단) ───────────────────────────
-elif view == VIEWS[9]:
-    st.subheader("빈도·도달 — 과노출 vs 광역확장 진단")
-    st.caption("예산↑이 같은 사람 반복(빈도↑=과노출/카니발)인지, 새 사람 확장(도달↑=희석)인지 구분.")
-    if "frequency" not in df.columns or df["frequency"].fillna(0).sum() == 0:
-        st.warning("빈도·도달 데이터가 아직 없습니다. (수집 후 표시)")
-    else:
-        w = df.set_index("date").resample("W-MON").agg(
-            지출=("spend", "sum"), 노출=("impressions", "sum"),
-            도달=("reach", "sum"), 클릭=("clicks", "sum")).reset_index()
-        w = w[w["지출"] > 0]
-        w["빈도"] = (w["노출"] / w["도달"]).where(w["도달"] > 0)
-        w["CTR"] = (w["클릭"] / w["노출"] * 100).where(w["노출"] > 0)
-
-        def _c(a, b):
-            return round(w[a].corr(w[b]), 2)
-        k = st.columns(3)
-        k[0].metric("지출 ↔ 도달", f"{_c('지출','도달'):+.2f}", "예산↑ → 신규 도달", delta_color="off")
-        k[1].metric("지출 ↔ 빈도", f"{_c('지출','빈도'):+.2f}", "예산↑ → 반복 노출", delta_color="off")
-        k[2].metric("빈도 ↔ CTR", f"{_c('빈도','CTR'):+.2f}", "과노출 → 덜 클릭", delta_color="off")
-
-        st.markdown("**주별 도달 vs 빈도** (도달↑·빈도 평평 = 광역 신규 확장 / 빈도↑ = 과노출)")
-        fig = go.Figure()
-        fig.add_bar(x=w["date"], y=w["도달"], name="도달(reach)", marker_color="#c7d2fe")
-        fig.add_scatter(x=w["date"], y=w["빈도"], name="빈도", mode="lines+markers",
-                        line=dict(color=RED, width=3), yaxis="y2")
-        fig.update_layout(height=360, margin=dict(t=30, b=10), yaxis=dict(title="도달"),
-                          yaxis2=dict(title="빈도", overlaying="y", side="right"),
-                          legend=dict(orientation="h", y=1.12))
-        st.plotly_chart(fig, use_container_width=True, key="freq_reach")
-
-        st.markdown("**주별 빈도 vs CTR** (둘이 반대로 가면 과노출 신호)")
-        fig2 = go.Figure()
-        fig2.add_scatter(x=w["date"], y=w["빈도"], name="빈도", mode="lines+markers", line=dict(color=AMBER))
-        fig2.add_scatter(x=w["date"], y=w["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE), yaxis="y2")
-        fig2.update_layout(height=320, margin=dict(t=30, b=10), yaxis=dict(title="빈도"),
-                           yaxis2=dict(title="CTR%", overlaying="y", side="right"),
-                           legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig2, use_container_width=True, key="freq_ctr")
-        st.info("※ 주간 빈도 = 노출÷도달(합산) 근사치. 현재 데이터: 빈도 ~1.2로 평평 + 도달 급증 "
-                "= 과노출·카니발 아니라 **광역 신규 확장에 의한 CTR 희석**.")
