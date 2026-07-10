@@ -522,11 +522,11 @@ elif view == VIEWS[6]:
     st.dataframe(disp, use_container_width=True, hide_index=True, height=520, column_config=won)
     st.caption("월별: 메타·구글 광고비 + 채널 판매 + 메타 CPA/CTR + 자사몰 건당 광고비. 보고서용 종합표.")
 
-# ─────────────────────────── ⑧ 소재 상태 (3분류) ───────────────────────────
+# ─────────────────────────── ⑧ 소재 상태 (4분류) ───────────────────────────
 elif view == VIEWS[7]:
     st.subheader("소재 상태 분류")
     st.caption("기준은 직접 조절 — 활성일(최근 N일 집행=돌고있는), CPA(이 값 이하=가능성 있음).")
-    cc = st.columns(3)
+    cc = st.columns(4)
     active_days = cc[0].number_input("활성 기준(일)", 1, 90, 14, step=1,
                                      help="최종 집행이 최근 N일 이내면 '지금 돌고있는'")
     med = cs.loc[cs["CPA"].notna(), "CPA"].median()
@@ -535,8 +535,14 @@ elif view == VIEWS[7]:
                                  help="안 도는 소재 중 CPA가 이 값 이하면 '가능성 있음'")
     budget_thr = cc[2].number_input("예산 기준치(₩)", 0, 100_000_000, 1_000_000, step=100_000,
                                     help="가능성 낮은 소재 중 지출이 이 값 미만이면 '추가 기회 필요'")
+    hide_image = cc[3].checkbox("[이미지] 소재 제외", value=False,
+                                help="소재명이 '[이미지]'로 시작하는 소재를 표에서 숨김")
 
     c = cs.copy()
+    if hide_image:
+        _img = c["소재"].astype(str).str.strip().str.startswith("[이미지]")
+        st.caption(f"[이미지] 소재 {int(_img.sum())}개 제외됨")
+        c = c[~_img]
     active = c["최종집행"] >= (max_date - pd.Timedelta(days=active_days))
     good = c["CPA"].notna() & (c["CPA"] <= cpa_thr)
     c["상태"] = "④"
