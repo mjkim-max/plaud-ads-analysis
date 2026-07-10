@@ -568,13 +568,17 @@ elif view == VIEWS[7]:
 
     def show_group(code, title, hint):
         sub = c[c["상태"] == code][cols].copy()
-        sub["최초집행"] = sub["최초집행"].dt.date
-        sub["최종집행"] = sub["최종집행"].dt.date
+        st.markdown(f"### {title} — {len(sub)}개")
+        st.caption(hint)
+        if sub.empty:                      # 빈 표를 Arrow로 렌더하면 세그폴트 → 표 생략
+            st.caption("— 해당 소재 없음 —")
+            return
+        # 날짜는 문자열로(‘date’ object 컬럼이 Arrow 변환에서 크래시하는 환경 회피)
+        sub["최초집행"] = sub["최초집행"].dt.strftime("%Y-%m-%d")
+        sub["최종집행"] = sub["최종집행"].dt.strftime("%Y-%m-%d")
         sub["지출"] = sub["지출"].round(0)
         sub["CPA"] = sub["CPA"].round(0)
         sub = sub.sort_values("지출", ascending=False).reset_index(drop=True)
-        st.markdown(f"### {title} — {len(sub)}개")
-        st.caption(hint)
         st.dataframe(sub, use_container_width=True, hide_index=True, height=300, column_config=cfg)
 
     show_group("①", "① 지금 돌고있는 소재", f"최근 {active_days}일 내 집행.")
