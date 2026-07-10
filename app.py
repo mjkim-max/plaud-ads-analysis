@@ -526,19 +526,22 @@ elif view == VIEWS[6]:
 elif view == VIEWS[7]:
     st.subheader("소재 상태 분류")
     st.caption("기준은 직접 조절 — 활성일(최근 N일 집행=돌고있는), CPA(이 값 이하=가능성 있음).")
-    cc = st.columns(2)
+    cc = st.columns(3)
     active_days = cc[0].number_input("활성 기준(일)", 1, 90, 14, step=1,
                                      help="최종 집행이 최근 N일 이내면 '지금 돌고있는'")
     med = cs.loc[cs["CPA"].notna(), "CPA"].median()
     cpa_thr = cc[1].number_input("가능성 CPA 기준(₩)", 0, 10_000_000,
                                  int(med) if not pd.isna(med) else 120000, step=10000,
                                  help="안 도는 소재 중 CPA가 이 값 이하면 '가능성 있음'")
+    budget_thr = cc[2].number_input("예산 기준치(₩)", 0, 100_000_000, 1_000_000, step=100_000,
+                                    help="가능성 낮은 소재 중 지출이 이 값 미만이면 '추가 기회 필요'")
 
     c = cs.copy()
     active = c["최종집행"] >= (max_date - pd.Timedelta(days=active_days))
     good = c["CPA"].notna() & (c["CPA"] <= cpa_thr)
-    c["상태"] = "③"
-    c.loc[good & ~active, "상태"] = "②"
+    c["상태"] = "④"
+    c.loc[~active & ~good & (c["지출"] < budget_thr), "상태"] = "③"
+    c.loc[~active & good, "상태"] = "②"
     c.loc[active, "상태"] = "①"
 
     cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
@@ -564,4 +567,5 @@ elif view == VIEWS[7]:
 
     show_group("①", "① 지금 돌고있는 소재", f"최근 {active_days}일 내 집행.")
     show_group("②", "② 안 돌지만 가능성 있는 소재", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
-    show_group("③", "③ 안 돌고 가능성 없는 소재", f"현재 안 돎 + CPA > ₩{cpa_thr:,} 또는 구매 없음 (정리 대상).")
+    show_group("③", "③ 안 돌았지만 예산 미달 — 추가 기회 필요", f"현재 안 돎 + 가능성 낮음 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 기회 부여).")
+    show_group("④", "④ 안 돌았고 예산 충분 — 가능성 없음", f"현재 안 돎 + 가능성 낮음 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
