@@ -85,12 +85,37 @@ def ctr_cvr_chart(t, title, key):
     st.plotly_chart(f, use_container_width=True, key=key)
 
 
+def spend_cpa_ctr_chart(t, title, key):
+    f = go.Figure()
+    f.add_bar(x=t["date"], y=t["지출"], name="지출", marker_color="#bfdbfe")
+    f.add_scatter(x=t["date"], y=t["CPA"], name="CPA", mode="lines+markers", line=dict(color=RED, width=2), yaxis="y2")
+    f.add_scatter(x=t["date"], y=t["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE, width=2), yaxis="y3")
+    f.update_layout(height=360, margin=dict(t=44, b=10), xaxis=dict(domain=[0, 0.86]),
+                    yaxis=dict(title="지출"), yaxis2=dict(title="CPA", overlaying="y", side="right"),
+                    yaxis3=dict(title="CTR%", overlaying="y", side="right", anchor="free", position=1.0, showgrid=False),
+                    legend=dict(orientation="h", y=1.14, x=0))
+    st.markdown(f"**{title}**")
+    st.plotly_chart(f, use_container_width=True, key=key)
+
+
+def imp_ctr_cvr_chart(t, title, key):
+    f = go.Figure()
+    f.add_bar(x=t["date"], y=t["노출"], name="노출", marker_color="#fde68a")
+    f.add_scatter(x=t["date"], y=t["CTR"], name="CTR%", mode="lines+markers", line=dict(color=BLUE, width=2), yaxis="y2")
+    f.add_scatter(x=t["date"], y=t["CVR"], name="CVR%", mode="lines+markers", line=dict(color=GREEN, width=2), yaxis="y2")
+    f.update_layout(height=360, margin=dict(t=44, b=10), yaxis=dict(title="노출"),
+                    yaxis2=dict(title="%", overlaying="y", side="right"),
+                    legend=dict(orientation="h", y=1.14, x=0))
+    st.markdown(f"**{title}**")
+    st.plotly_chart(f, use_container_width=True, key=key)
+
+
 cs = creative_summary(df)
 
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 메타 효율 추이", "⑤ 소재 생존·품질", "⑥ 구글×메타 교차분석", "⑦ 제작×집행 매트릭스", "⑧ 채널 매출·ROAS", "⑨ 보고(월별 종합)"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)"]
 view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
@@ -159,6 +184,34 @@ elif view == VIEWS[1]:
                         legend=dict(orientation="h", y=1.15))
         st.plotly_chart(f, use_container_width=True)
 
+    st.divider()
+    st.subheader("소재 생존곡선 (수명 ≥ N일 비율)")
+    life = cs["수명일"].dropna()
+    ks = list(range(0, int(min(life.max(), 180)) + 1, 3)) if len(life) else [0]
+    surv = [(life >= k).mean() * 100 for k in ks]
+    figS = go.Figure(go.Scatter(x=ks, y=surv, mode="lines", fill="tozeroy", line=dict(color=BLUE)))
+    figS.update_layout(height=300, margin=dict(t=20, b=10), xaxis_title="일수 K", yaxis_title="생존율 (%)")
+    st.plotly_chart(figS, use_container_width=True, key="surv_curve")
+    st.caption("※ 최근 제작 소재는 절단(censoring)으로 수명이 짧게 잡힘.")
+    cs3 = cs.copy()
+    cs3["제작월"] = cs3["최초집행"].dt.to_period("M").astype(str)
+    q1, q2 = st.columns(2)
+    with q1:
+        st.markdown("**제작월별 평균 CTR**")
+        mm = cs3.dropna(subset=["CTR"]).groupby("제작월").apply(
+            lambda x: (x["클릭"].sum() / x["노출"].sum() * 100) if x["노출"].sum() else 0).reset_index(name="CTR")
+        fq1 = px.bar(mm, x="제작월", y="CTR", color_discrete_sequence=[BLUE])
+        fq1.update_layout(height=300, margin=dict(t=20, b=10), yaxis_title="CTR (%)")
+        st.plotly_chart(fq1, use_container_width=True, key="qual_ctr")
+    with q2:
+        st.markdown("**제작월별 소재 수명 분포**")
+        cs3["구간"] = pd.cut(cs3["수명일"], [0, 14, 29, 10**9], labels=["단기≤14", "중기15-29", "장기≥30"])
+        dist = cs3.groupby(["제작월", "구간"], observed=True).size().reset_index(name="n")
+        fq2 = px.bar(dist, x="제작월", y="n", color="구간", barmode="stack",
+                     color_discrete_map={"단기≤14": "#fca5a5", "중기15-29": "#fde047", "장기≥30": GREEN})
+        fq2.update_layout(height=300, margin=dict(t=20, b=10), yaxis_title="소재 수")
+        st.plotly_chart(fq2, use_container_width=True, key="qual_life")
+
 # ─────────────────────────── ③ 제작월별 진단 ───────────────────────────
 elif view == VIEWS[2]:
     st.subheader("제작월별 소재 진단")
@@ -176,9 +229,9 @@ elif view == VIEWS[2]:
     t = resample_metrics(sub, freq)
     a, b = st.columns(2)
     with a:
-        spend_cpa_chart(t, f"{mo} 묶음 — 지출 vs CPA 변화", "coh_sc")
+        spend_cpa_ctr_chart(t, f"{mo} 묶음 — 지출·CPA·CTR", "coh_1")
     with b:
-        ctr_cvr_chart(t, f"{mo} 묶음 — CTR / CVR 변화", "coh_cc")
+        imp_ctr_cvr_chart(t, f"{mo} 묶음 — 노출·CTR·CVR", "coh_2")
 
     st.divider()
     st.markdown("**소재 목록** (행 클릭 → 아래에 그 소재 추이)")
@@ -212,93 +265,13 @@ elif view == VIEWS[2]:
         one = resample_metrics(df[df["소재"] == sel], "W-MON")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**주별 지출 vs CPA vs CTR**")
-            fig = go.Figure()
-            fig.add_bar(x=one["date"], y=one["지출"], name="지출", marker_color="#bfdbfe")
-            fig.add_scatter(x=one["date"], y=one["CPA"], name="CPA", mode="lines+markers",
-                            line=dict(color=RED, width=2), yaxis="y2")
-            fig.add_scatter(x=one["date"], y=one["CTR"], name="CTR%", mode="lines+markers",
-                            line=dict(color=BLUE, width=2), yaxis="y3")
-            fig.update_layout(height=360, margin=dict(t=44, b=10),
-                              xaxis=dict(domain=[0, 0.86]),
-                              yaxis=dict(title="지출"),
-                              yaxis2=dict(title="CPA", overlaying="y", side="right"),
-                              yaxis3=dict(title="CTR%", overlaying="y", side="right",
-                                          anchor="free", position=1.0, showgrid=False),
-                              legend=dict(orientation="h", y=1.14, x=0))
-            st.plotly_chart(fig, use_container_width=True, key="drl_1")
+            spend_cpa_ctr_chart(one, "주별 지출·CPA·CTR", "drl_1")
         with c2:
-            st.markdown("**주별 노출 vs CTR vs CVR**")
-            fig = go.Figure()
-            fig.add_bar(x=one["date"], y=one["노출"], name="노출", marker_color="#fde68a")
-            fig.add_scatter(x=one["date"], y=one["CTR"], name="CTR%", mode="lines+markers",
-                            line=dict(color=BLUE, width=2), yaxis="y2")
-            fig.add_scatter(x=one["date"], y=one["CVR"], name="CVR%", mode="lines+markers",
-                            line=dict(color=GREEN, width=2), yaxis="y2")
-            fig.update_layout(height=360, margin=dict(t=44, b=10), yaxis=dict(title="노출"),
-                              yaxis2=dict(title="%", overlaying="y", side="right"),
-                              legend=dict(orientation="h", y=1.14, x=0))
-            st.plotly_chart(fig, use_container_width=True, key="drl_2")
+            imp_ctr_cvr_chart(one, "주별 노출·CTR·CVR", "drl_2")
         st.caption("노출이 쌓이는데 CTR·CVR이 떨어지면 → 소재 소진(피로) 신호.")
 
-# ─────────────────────────── ④ 메타 효율 추이 ───────────────────────────
+# ─────────────────────────── ④ 구글×메타 교차분석 ───────────────────────────
 elif view == VIEWS[3]:
-    st.subheader("메타 효율 시계열")
-    freq_label = st.radio("주기", ["일", "주", "월"], horizontal=True, index=1, key="eff_freq")
-    freq = {"일": "D", "주": "W-MON", "월": "MS"}[freq_label]
-    t = resample_metrics(df, freq)
-    fig = go.Figure()
-    fig.add_bar(x=t["date"], y=t["지출"], name="지출", marker_color="#bfdbfe")
-    fig.add_scatter(x=t["date"], y=t["CPA"], name="CPA", mode="lines+markers",
-                    line=dict(color=RED, width=3), yaxis="y2")
-    fig.update_layout(height=360, margin=dict(t=30, b=10), yaxis=dict(title="지출"),
-                      yaxis2=dict(title="CPA", overlaying="y", side="right"),
-                      legend=dict(orientation="h", y=1.12))
-    st.plotly_chart(fig, use_container_width=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        f = go.Figure()
-        f.add_scatter(x=t["date"], y=t["CTR"], name="CTR%", line=dict(color=BLUE))
-        f.add_scatter(x=t["date"], y=t["CVR"], name="CVR%", line=dict(color=GREEN))
-        f.update_layout(height=300, margin=dict(t=36, b=10), title="CTR / CVR (%)",
-                        legend=dict(orientation="h", y=1.16))
-        st.plotly_chart(f, use_container_width=True)
-    with c2:
-        f = go.Figure(go.Scatter(x=t["date"], y=t["CPM"], name="CPM", line=dict(color=AMBER)))
-        f.update_layout(height=300, margin=dict(t=36, b=10), title="CPM (매체 단가)")
-        st.plotly_chart(f, use_container_width=True)
-
-# ─────────────────────────── ⑤ 소재 생존·품질 ───────────────────────────
-elif view == VIEWS[4]:
-    st.subheader("소재 생존곡선 (수명 ≥ N일 비율)")
-    life = cs["수명일"].dropna()
-    ks = list(range(0, int(min(life.max(), 180)) + 1, 3)) if len(life) else [0]
-    surv = [(life >= k).mean() * 100 for k in ks]
-    fig = go.Figure(go.Scatter(x=ks, y=surv, mode="lines", fill="tozeroy", line=dict(color=BLUE)))
-    fig.update_layout(height=320, margin=dict(t=20, b=10), xaxis_title="일수 K", yaxis_title="생존율 (%)")
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("※ 최근 제작 소재는 절단(censoring)으로 수명이 짧게 잡힘.")
-    cs3 = cs.copy()
-    cs3["제작월"] = cs3["최초집행"].dt.to_period("M").astype(str)
-    q1, q2 = st.columns(2)
-    with q1:
-        st.subheader("제작월별 평균 CTR")
-        mm = cs3.dropna(subset=["CTR"]).groupby("제작월").apply(
-            lambda x: (x["클릭"].sum() / x["노출"].sum() * 100) if x["노출"].sum() else 0).reset_index(name="CTR")
-        f = px.bar(mm, x="제작월", y="CTR", color_discrete_sequence=[BLUE])
-        f.update_layout(height=320, margin=dict(t=20, b=10), yaxis_title="CTR (%)")
-        st.plotly_chart(f, use_container_width=True)
-    with q2:
-        st.subheader("제작월별 소재 수명 분포")
-        cs3["구간"] = pd.cut(cs3["수명일"], [0, 14, 29, 10**9], labels=["단기≤14", "중기15-29", "장기≥30"])
-        dist = cs3.groupby(["제작월", "구간"], observed=True).size().reset_index(name="n")
-        f = px.bar(dist, x="제작월", y="n", color="구간", barmode="stack",
-                   color_discrete_map={"단기≤14": "#fca5a5", "중기15-29": "#fde047", "장기≥30": GREEN})
-        f.update_layout(height=320, margin=dict(t=20, b=10), yaxis_title="소재 수")
-        st.plotly_chart(f, use_container_width=True)
-
-# ─────────────────────────── ⑥ 구글×메타 교차분석 ───────────────────────────
-elif view == VIEWS[5]:
     st.subheader("구글 디멘드젠 → 메타 효율 (교차분석)")
     st.caption("가설: 구글 디멘드젠 노출·클릭 ↑ → 메타 CTR·CVR ↑. 주 단위로 검증. "
                "(상관 ≠ 인과 — 같은 시기 소재 변화 등 교란 가능)")
@@ -372,8 +345,8 @@ elif view == VIEWS[5]:
                              xaxis_title=f"구글 {gmet}", yaxis_title=f"메타 {mmet}")
             st.plotly_chart(sc, use_container_width=True, key="cross_sc")
 
-# ─────────────────────────── ⑦ 제작×집행 매트릭스 ───────────────────────────
-elif view == VIEWS[6]:
+# ─────────────────────────── ⑤ 제작×집행 매트릭스 ───────────────────────────
+elif view == VIEWS[4]:
     st.subheader("제작월 × 집행월 매트릭스")
     st.caption("행=제작월(소재 만든 달) · 열=집행월 · 셀=선택 지표 · 합계 포함. "
                "(제작 이전 집행은 없어 상삼각은 비어있음)")
@@ -430,8 +403,8 @@ elif view == VIEWS[6]:
     disp = mat.apply(lambda c: c.map(_cell)).reset_index()
     st.dataframe(disp, use_container_width=True, hide_index=True, height=600)
 
-# ─────────────────────────── ⑧ 채널 매출·ROAS ───────────────────────────
-elif view == VIEWS[7]:
+# ─────────────────────────── ⑥ 채널 매출·ROAS ───────────────────────────
+elif view == VIEWS[5]:
     st.subheader("채널 매출 · ROAS")
     sales = dl.load_channel_sales()
     if sales.empty:
@@ -494,8 +467,8 @@ elif view == VIEWS[7]:
         fig2.update_layout(height=300, margin=dict(t=30, b=10), title="자사몰 판매 1건당 광고비 (₩)")
         st.plotly_chart(fig2, use_container_width=True, key="roas_cpa")
 
-# ─────────────────────────── ⑨ 보고 (월별 종합) ───────────────────────────
-elif view == VIEWS[8]:
+# ─────────────────────────── ⑦ 보고 (월별 종합) ───────────────────────────
+elif view == VIEWS[6]:
     st.subheader("보고 — 월별 종합 요약")
     g = dl.load_google_daily()
     sales = dl.load_channel_sales()
