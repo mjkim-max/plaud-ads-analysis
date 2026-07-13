@@ -3,6 +3,7 @@
 소재(정규명) 단위 지표를 그래프로 보여주는 데 집중. 판단 라벨은 두지 않는다.
 데이터: meta_소재일별(매일 자동수집) + 소재매핑(광고이름→소재, 실시간).
 """
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -108,6 +109,73 @@ def imp_ctr_cvr_chart(t, title, key):
                     legend=dict(orientation="h", y=1.14, x=0))
     st.markdown(f"**{title}**")
     st.plotly_chart(f, use_container_width=True, key=key)
+
+
+def _ctr_trend(t):
+    """주별 CTR(노출 가중) 선형 추세. → 기울기·최신 추세값·최근 실측 CTR. 데이터 2주 미만이면 None."""
+    d = t.dropna(subset=["CTR"])
+    d = d[d["노출"] > 0]
+    if len(d) < 2:
+        return None
+    x = np.arange(len(d), dtype=float)
+    y = d["CTR"].to_numpy(dtype=float)
+    w = np.sqrt(d["노출"].to_numpy(dtype=float))
+    coef = np.polyfit(x, y, 1, w=w)              # [기울기, 절편]
+    return {"coef": coef, "x": x, "d": d,
+            "slope": float(coef[0]),
+            "fit_latest": float(np.polyval(coef, x[-1])),
+            "last_ctr": float(y[-1])}
+
+
+def ctr_life_chart(t, title, key, thr):
+    """주별 CTR + 노출가중 추세선 + 수명 기준선. 추세 정보 반환."""
+    tr = _ctr_trend(t)
+    f = go.Figure()
+    f.add_scatter(x=t["date"], y=t["CTR"], name="CTR%", mode="lines+markers",
+                  line=dict(color=BLUE, width=2))
+    if tr is not None:
+        f.add_scatter(x=tr["d"]["date"], y=np.polyval(tr["coef"], tr["x"]),
+                      name="추세선", mode="lines", line=dict(color="#f59e0b", width=2, dash="dash"))
+    f.add_hline(y=thr, line=dict(color=RED, width=1.5, dash="dot"),
+                annotation_text=f"수명 기준 {thr:.2f}%", annotation_position="top left")
+    f.update_layout(height=340, margin=dict(t=44, b=10), yaxis=dict(title="CTR%"),
+                    legend=dict(orientation="h", y=1.14, x=0))
+    st.markdown(f"**{title}**")
+    st.plotly_chart(f, use_container_width=True, key=key)
+    return tr
+
+
+def creative_life_table(d: pd.DataFrame, cohort: list, thr: float) -> pd.DataFrame:
+    """코호트 소재별 주간 CTR 추세로 수명 판정(추세 CTR < 기준 → 폐기 대상)."""
+    sub = d[d["소재"].isin(cohort)]
+    if sub.empty:
+        return pd.DataFrame()
+    wk = (sub.set_index("date").groupby("소재")
+             .resample("W-MON").agg(노출=("impressions", "sum"),
+                                    클릭=("clicks", "sum"),
+                                    지출=("spend", "sum")).reset_index())
+    wk = wk[(wk["지출"] > 0) & (wk["노출"] > 0)]
+    wk["CTR"] = wk["클릭"] / wk["노출"] * 100
+    rows = []
+    for name, gr in wk.groupby("소재"):
+        gr = gr.dropna(subset=["CTR"])
+        if len(gr) < 2:
+            last = gr["CTR"].iloc[-1] if len(gr) else np.nan
+            rows.append({"소재": name, "주수": len(gr), "최근CTR": last,
+                         "추세CTR": np.nan, "주간변화": np.nan, "판정": "데이터부족"})
+            continue
+        x = np.arange(len(gr), dtype=float)
+        y = gr["CTR"].to_numpy(dtype=float)
+        w = np.sqrt(gr["노출"].to_numpy(dtype=float))
+        coef = np.polyfit(x, y, 1, w=w)
+        fit_latest = float(np.polyval(coef, x[-1]))
+        rows.append({"소재": name, "주수": len(gr), "최근CTR": float(y[-1]),
+                     "추세CTR": fit_latest, "주간변화": float(coef[0]),
+                     "판정": "🔴 수명 다함" if fit_latest < thr else "🟢 유효"})
+    out = pd.DataFrame(rows)
+    order = {"🔴 수명 다함": 0, "🟢 유효": 1, "데이터부족": 2}
+    out["_o"] = out["판정"].map(order)
+    return out.sort_values(["_o", "추세CTR"], ascending=[True, True]).drop(columns="_o").reset_index(drop=True)
 
 
 cs = creative_summary(df)
@@ -227,6 +295,9 @@ elif view == VIEWS[2]:
     sub = df[df["소재"].isin(cohort)]
     st.caption(f"{mo} · 소재 {len(cohort)}개 · 지출 ₩{sub['spend'].sum():,.0f} · 구매 {int(sub['omni_purchase'].sum()):,}건")
 
+    thr = st.number_input("CTR 수명 기준치(%)", 0.0, 10.0, 1.5, step=0.1,
+                          help="주별 CTR(노출가중) 추세선의 최신값이 이 기준 미만이면 '수명 다함(폐기 대상)'")
+
     freq_label = st.radio("주기", ["주", "월"], horizontal=True, index=0, key="cohort_freq")
     freq = {"주": "W-MON", "월": "MS"}[freq_label]
     t = resample_metrics(sub, freq)
@@ -235,6 +306,22 @@ elif view == VIEWS[2]:
         spend_cpa_ctr_chart(t, f"{mo} 묶음 — 지출·CPA·CTR", "coh_1")
     with b:
         imp_ctr_cvr_chart(t, f"{mo} 묶음 — 노출·CTR·CVR", "coh_2")
+
+    st.divider()
+    st.markdown("**🔻 소재 수명 판정** — 주별 CTR(노출가중) 추세선 최신값이 기준치 미만이면 폐기 대상")
+    life = creative_life_table(df, cohort, thr)
+    if life.empty:
+        st.caption("판정할 데이터가 없습니다.")
+    else:
+        dead = int((life["판정"] == "🔴 수명 다함").sum())
+        st.caption(f"폐기 대상 🔴 {dead}개 / 판정 {len(life)}개 · 기준 {thr:.2f}% (추세CTR 낮은 순)")
+        st.dataframe(
+            life, use_container_width=True, hide_index=True, height=340,
+            column_config={
+                "최근CTR": st.column_config.NumberColumn("최근CTR%", format="%.2f"),
+                "추세CTR": st.column_config.NumberColumn("추세CTR%", format="%.2f"),
+                "주간변화": st.column_config.NumberColumn("주간변화(%p)", format="%.3f"),
+            })
 
     st.divider()
     st.markdown("**소재 목록** (행 클릭 → 아래에 그 소재 추이)")
@@ -272,6 +359,18 @@ elif view == VIEWS[2]:
         with c2:
             imp_ctr_cvr_chart(one, "주별 노출·CTR·CVR", "drl_2")
         st.caption("노출이 쌓이는데 CTR·CVR이 떨어지면 → 소재 소진(피로) 신호.")
+
+        life_tr = ctr_life_chart(one, f"주별 CTR · 추세선·수명 기준선({thr:.2f}%)", "drl_life", thr)
+        if life_tr is None:
+            st.caption("주간 데이터가 2주 미만 — 추세 판정 불가.")
+        else:
+            dead = life_tr["fit_latest"] < thr
+            verdict = "🔴 수명 다함 (폐기 대상)" if dead else "🟢 유효"
+            arrow = "하락 ↘" if life_tr["slope"] < 0 else "상승 ↗"
+            st.markdown(
+                f"### {verdict}\n"
+                f"- 추세 CTR(최신) **{life_tr['fit_latest']:.2f}%** vs 기준 **{thr:.2f}%**\n"
+                f"- 최근 실측 CTR {life_tr['last_ctr']:.2f}% · 주간 추세 {arrow} {life_tr['slope']:+.3f}%p/주")
 
 # ─────────────────────────── ④ 구글×메타 교차분석 ───────────────────────────
 elif view == VIEWS[3]:
