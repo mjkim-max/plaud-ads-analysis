@@ -57,3 +57,14 @@ META_CREATIVE_DAILY_COLUMNS = [
 
 # 소재매핑 탭: 광고이름 → 소재(정규명) + 분류방식(수동/자동)
 CREATIVE_MAP_COLUMNS = ["광고이름", "소재", "분류방식"]
+
+# 지면(placement) 스냅샷 — publisher_platform × platform_position 별 집계.
+# 매 실행마다 최근 N일 윈도로 덮어씀(스냅샷). 포맷(이미지/영상)별 지면 CPM 검증용.
+TAB_META_PLACEMENT = "meta_지면"
+PLACEMENT_WINDOW_DAYS = int(os.environ.get("META_PLACEMENT_DAYS", "30"))
+META_PLACEMENT_COLUMNS = [
+    "window_since", "window_until", "publisher_platform", "platform_position",
+    "objective", "ad_id", "ad_name",
+    "spend", "impressions", "clicks", "link_clicks",
+    "purchase", "offline_purchase", "omni_purchase", "revenue",
+]

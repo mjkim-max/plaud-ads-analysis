@@ -37,6 +37,15 @@ jobs:
           META_UNTIL: ${{ inputs.until }}
         run: python -m collectors.meta_creative_daily
 
+      - name: Collect Meta placement snapshot → Sheets
+        continue-on-error: true   # 지면 수집 실패해도 나머지 파이프라인 유지
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m collectors.meta_placement
+
       - name: Collect Google campaign-daily → Sheets
         continue-on-error: true   # 구글 미설정이어도 메타 수집은 성공 처리
         env:

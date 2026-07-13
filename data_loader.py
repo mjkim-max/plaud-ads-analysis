@@ -102,6 +102,34 @@ def load_contract_ended() -> set:
 
 
 @st.cache_data(ttl=300)
+def load_placement() -> pd.DataFrame:
+    """meta_지면 (ad×지면 스냅샷) → 소재/포맷(이미지/영상) 조인. 탭 없으면 빈 DF."""
+    try:
+        ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_지면")
+    except Exception:
+        return pd.DataFrame()
+    df = pd.DataFrame(ws.get_all_records())
+    if df.empty:
+        return df
+    for c in ["spend", "impressions", "clicks", "link_clicks",
+              "purchase", "offline_purchase", "omni_purchase", "revenue"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    for c in ["window_since", "window_until", "publisher_platform",
+              "platform_position", "objective", "ad_id", "ad_name"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str)
+    soje_map, excluded = _creative_map()
+    ad = df["ad_name"].str.strip()
+    if excluded:
+        keep = ~ad.isin(excluded)
+        df, ad = df[keep], ad[keep]
+    df["소재"] = ad.map(soje_map).fillna(ad) if soje_map else ad
+    df["포맷"] = df["소재"].str.startswith("[이미지]").map({True: "이미지", False: "영상"})
+    return df.reset_index(drop=True)
+
+
+@st.cache_data(ttl=300)
 def load_meta_daily() -> pd.DataFrame:
     """meta_소재일별 (라이브). 소재는 소재매핑 탭에서 실시간 조인, 제외 광고이름은 숨김."""
     ws = _gs_client().open_by_key(_sheet_id()).worksheet("meta_소재일별")

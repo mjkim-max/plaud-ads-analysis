@@ -183,7 +183,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(4분류)"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(4분류)", "⑨ 지면 분석(이미지 vs 영상)"]
 # 셀렉터에서 숨길 화면(코드/인덱스는 유지 — 아래 elif가 VIEWS[N]을 참조하므로 목록은 그대로 둠)
 HIDDEN_VIEWS = {VIEWS[0], VIEWS[3], VIEWS[6]}  # ① 개요 · ④ 구글×메타 교차분석 · ⑦ 보고(월별 종합)
 VISIBLE_VIEWS = [v for v in VIEWS if v not in HIDDEN_VIEWS]
@@ -695,3 +695,61 @@ elif view == VIEWS[7]:
         "📝 계약종료 리스트 편집 (구글시트 열기)",
         "https://docs.google.com/spreadsheets/d/1l6GB0Bow6m2wimf-aNZJwnkoAqtwIpqPX6en8Wx2kcg/edit?gid=1487400031#gid=1487400031",
     )
+
+# ─────────────────────────── ⑨ 지면 분석(이미지 vs 영상) ───────────────────────────
+elif view == VIEWS[8]:
+    st.subheader("지면(placement) 분석 — 이미지 vs 영상")
+    pl = dl.load_placement()
+    if pl.empty:
+        st.info("`meta_지면` 탭이 아직 없습니다. 수집 워크플로(collect-ads-data)가 다음 실행(매일 06:00 KST) 후 생성해요.\n\n"
+                "지금 바로 채우려면 GitHub Actions에서 **collect-ads-data → Run workflow** 를 수동 실행하세요.")
+    else:
+        w0 = pl["window_since"].iloc[0] if "window_since" in pl.columns else "?"
+        w1 = pl["window_until"].iloc[0] if "window_until" in pl.columns else "?"
+        st.caption(f"윈도: {w0} ~ {w1} · 지면 = publisher_platform × platform_position · 구매목표 캠페인만")
+
+        pl = pl.copy()
+        pl["지면"] = pl["publisher_platform"].str.strip() + " / " + pl["platform_position"].str.strip()
+
+        def _agg(keys):
+            g = pl.groupby(keys).agg(지출=("spend", "sum"), 노출=("impressions", "sum"),
+                                     클릭=("clicks", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+            g["CPM"] = (g["지출"] / g["노출"] * 1000).where(g["노출"] > 0)
+            g["CTR"] = (g["클릭"] / g["노출"] * 100).where(g["노출"] > 0)
+            g["CVR"] = (g["구매"] / g["클릭"] * 100).where(g["클릭"] > 0)
+            g["CPA"] = (g["지출"] / g["구매"]).where(g["구매"] > 0)
+            return g
+
+        cfg = {
+            "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+            "노출": st.column_config.NumberColumn(format="localized"),
+            "CPM": st.column_config.NumberColumn("CPM(₩)", format="localized"),
+            "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
+            "CTR": st.column_config.NumberColumn("CTR%", format="%.2f"),
+            "CVR": st.column_config.NumberColumn("CVR%", format="%.2f"),
+        }
+
+        st.markdown("**① 지면별 CPM (싼 순) — 어느 구좌가 싼가**")
+        gp = _agg(["지면"]).sort_values("CPM")
+        st.dataframe(gp[["지면", "지출", "노출", "CPM", "CTR", "CVR", "CPA"]],
+                     use_container_width=True, hide_index=True, height=320, column_config=cfg)
+
+        st.divider()
+        st.markdown("**② 같은 지면에서 이미지 vs 영상 CPM** — "
+                    "격차 작으면(≈1.0) '이미지 싼 건 지면 믹스', 이미지가 같은 지면서도 낮으면 '경매가 이미지 우대'")
+        gf = _agg(["지면", "포맷"])
+        cpm_piv = gf.pivot(index="지면", columns="포맷", values="CPM")
+        cpm_piv = cpm_piv.assign(지출=gf.groupby("지면")["지출"].sum()).sort_values("지출", ascending=False)
+        if "이미지" in cpm_piv.columns and "영상" in cpm_piv.columns:
+            cpm_piv["이미지÷영상"] = cpm_piv["이미지"] / cpm_piv["영상"]
+        st.dataframe(cpm_piv.reset_index().round(2), use_container_width=True, hide_index=True, height=320)
+
+        st.divider()
+        st.markdown("**③ 포맷별 지면 지출 비중(%)** — 이미지가 어느 구좌에 몰려있나")
+        mix = _agg(["포맷", "지면"])
+        mix["지출비중%"] = mix["지출"] / mix.groupby("포맷")["지출"].transform("sum") * 100
+        mixp = mix.pivot(index="지면", columns="포맷", values="지출비중%").fillna(0).round(1)
+        st.dataframe(mixp.reset_index(), use_container_width=True, hide_index=True, height=320)
+
+        st.caption("판정: ②에서 지면 내 이미지/영상 CPM 격차가 작고(≈1.0) ③에서 이미지가 싼 지면에 몰려 있으면 "
+                   "→ **구좌 믹스 효과(구좌빨)**. ②에서 같은 지면서도 이미지 CPM이 낮으면 → 메타 경매가 이미지를 우대.")
