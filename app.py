@@ -116,7 +116,10 @@ st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
 VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(4분류)"]
-view = st.radio("화면", VIEWS, horizontal=True, key="view", label_visibility="collapsed")
+# 셀렉터에서 숨길 화면(코드/인덱스는 유지 — 아래 elif가 VIEWS[N]을 참조하므로 목록은 그대로 둠)
+HIDDEN_VIEWS = {VIEWS[0], VIEWS[3], VIEWS[6]}  # ① 개요 · ④ 구글×메타 교차분석 · ⑦ 보고(월별 종합)
+VISIBLE_VIEWS = [v for v in VIEWS if v not in HIDDEN_VIEWS]
+view = st.radio("화면", VISIBLE_VIEWS, horizontal=True, key="view", label_visibility="collapsed")
 
 # ─────────────────────────── ① 개요 ───────────────────────────
 if view == VIEWS[0]:
