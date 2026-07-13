@@ -528,10 +528,11 @@ elif view == VIEWS[6]:
 # ─────────────────────────── ⑧ 소재 상태 (4분류) ───────────────────────────
 elif view == VIEWS[7]:
     st.subheader("소재 상태 분류")
-    st.caption("기준은 직접 조절 — 활성일(최근 N일 집행=돌고있는), CPA(이 값 이하=가능성 있음).")
+    st.caption(f"기준은 직접 조절 — 집행 기준일(최근 N일 집행=집행 O), CPA(이 값 이하=가능성 있음). "
+               f"데이터 최신일: **{max_date.date()}**")
     cc = st.columns(4)
-    active_days = cc[0].number_input("활성 기준(일)", 1, 90, 14, step=1,
-                                     help="최종 집행이 최근 N일 이내면 '지금 돌고있는'")
+    active_days = cc[0].number_input("집행 기준(일)", 1, 90, 1, step=1,
+                                     help="최종 집행이 최근 N일 이내면 '① 집행 O'. 1이면 어제(=데이터 최신일) 집행한 소재만.")
     med = cs.loc[cs["CPA"].notna(), "CPA"].median()
     cpa_thr = cc[1].number_input("가능성 CPA 기준(₩)", 0, 10_000_000,
                                  int(med) if not pd.isna(med) else 120000, step=10000,
@@ -584,7 +585,9 @@ elif view == VIEWS[7]:
         sub = sub.sort_values("지출", ascending=False).reset_index(drop=True)
         st.dataframe(sub, use_container_width=True, hide_index=True, height=300, column_config=cfg)
 
-    show_group("①", "① 광고 집행 O", f"최근 {active_days}일 내 집행 중.")
+    _cut = (max_date - pd.Timedelta(days=active_days)).date()
+    show_group("①", "① 광고 집행 O",
+               f"{_cut} 이후 집행(최종집행이 최근 {active_days}일 이내). 1일=어제 집행한 소재.")
     show_group("②", "② 광고 집행 X │ CPA O", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
     show_group("③", "③ 광고 집행 X │ CPA X │ SPEND O", f"현재 안 돎 + CPA 기준 초과 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 추가 기회).")
     show_group("④", "④ 광고 집행 X │ CPA X │ SPEND X", f"현재 안 돎 + CPA 기준 초과 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
