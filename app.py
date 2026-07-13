@@ -581,11 +581,11 @@ elif view == VIEWS[7]:
         sub = sub.sort_values("지출", ascending=False).reset_index(drop=True)
         st.dataframe(sub, use_container_width=True, hide_index=True, height=300, column_config=cfg)
 
-    show_group("①", "① 지금 돌고있는 소재", f"최근 {active_days}일 내 집행.")
-    show_group("②", "② 안 돌지만 가능성 있는 소재", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
-    show_group("③", "③ 안 돌았지만 예산 미달 — 추가 기회 필요", f"현재 안 돎 + 가능성 낮음 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 기회 부여).")
-    show_group("④", "④ 안 돌았고 예산 충분 — 가능성 없음", f"현재 안 돎 + 가능성 낮음 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
-    show_group("⑤", "⑤ 계약종료 — 집행 불가", "계약 만료로 못 도는 소재(성과 무관). `소재_계약종료` 시트 탭에서 관리 → ①~④에서 자동 제외.")
+    show_group("①", "① 광고 집행 O", f"최근 {active_days}일 내 집행 중.")
+    show_group("②", "② 광고 집행 X │ CPA O", f"현재 안 돎 + CPA ≤ ₩{cpa_thr:,} (재집행/증액 후보).")
+    show_group("③", "③ 광고 집행 X │ CPA X │ SPEND O", f"현재 안 돎 + CPA 기준 초과 + 지출 < ₩{budget_thr:,} (아직 덜 검증 → 추가 기회).")
+    show_group("④", "④ 광고 집행 X │ CPA X │ SPEND X", f"현재 안 돎 + CPA 기준 초과 + 지출 ≥ ₩{budget_thr:,} (충분히 태웠는데 부진 → 정리).")
+    show_group("⑤", "⑤ 집행 불가", "계약 만료 등으로 못 도는 소재(성과 무관). `소재_계약종료` 시트 탭에서 관리 → ①~④에서 자동 제외.")
     st.link_button(
         "📝 계약종료 리스트 편집 (구글시트 열기)",
         "https://docs.google.com/spreadsheets/d/1l6GB0Bow6m2wimf-aNZJwnkoAqtwIpqPX6en8Wx2kcg/edit?gid=1487400031#gid=1487400031",
