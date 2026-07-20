@@ -68,3 +68,13 @@ META_PLACEMENT_COLUMNS = [
     "spend", "impressions", "clicks", "link_clicks",
     "purchase", "offline_purchase", "omni_purchase", "revenue",
 ]
+
+# 성별×연령(age × gender) 스냅샷 — 최근 N일 윈도로 덮어씀.
+TAB_META_GENDER = "meta_성별"
+GENDER_WINDOW_DAYS = int(os.environ.get("META_GENDER_DAYS", "30"))
+META_GENDER_COLUMNS = [
+    "window_since", "window_until", "age", "gender",
+    "objective", "ad_id", "ad_name",
+    "spend", "impressions", "clicks", "link_clicks",
+    "purchase", "offline_purchase", "omni_purchase", "revenue",
+]

@@ -659,6 +659,37 @@ elif view == VIEWS[7]:
     c.loc[active, "상태"] = "①"
     c.loc[is_ended, "상태"] = "⑤"   # 계약종료는 성과 무관하게 우선 분류
 
+    # ── 성별×연령 (최근 N일 스냅샷) — meta_성별 탭 ──
+    gdf = dl.load_gender()
+    gpv = None
+    if not gdf.empty:
+        gdf = gdf[gdf["소재"].isin(c["소재"])]
+    has_gender = not gdf.empty
+    show_gender = st.checkbox("성별 예산·CPA 표시 (최근 30일 스냅샷)", value=has_gender,
+                              disabled=not has_gender,
+                              help="meta_성별 탭 기준. 성별×연령 요약 + 각 소재 표에 여성/남성 지출·CPA 컬럼 추가.")
+    if not has_gender:
+        st.caption("성별 데이터 없음 — collect 워크플로 실행 후 `meta_성별` 탭 생성되면 표시됩니다.")
+    elif show_gender:
+        w0, w1 = gdf["window_since"].iloc[0], gdf["window_until"].iloc[0]
+        st.markdown(f"**성별×연령 요약 — 지출·CPA · {w0}~{w1}**")
+        ga = gdf.groupby(["age", "성별"]).agg(지출=("spend", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+        ga["CPA"] = (ga["지출"] / ga["구매"]).where(ga["구매"] > 0)
+        ag = pd.concat([ga.pivot(index="age", columns="성별", values="지출").add_suffix(" 지출"),
+                        ga.pivot(index="age", columns="성별", values="CPA").add_suffix(" CPA")],
+                       axis=1).reset_index().round(0).sort_values("age")
+        st.dataframe(ag, use_container_width=True, hide_index=True, height=300)
+        # 소재별 성별 pivot (아래 4분류 표에 붙일 컬럼)
+        per = gdf.groupby(["소재", "성별"]).agg(지출=("spend", "sum"), 구매=("omni_purchase", "sum")).reset_index()
+        per["CPA"] = (per["지출"] / per["구매"]).where(per["구매"] > 0)
+        sp = per.pivot(index="소재", columns="성별", values="지출")
+        cp = per.pivot(index="소재", columns="성별", values="CPA")
+        gpv = pd.DataFrame(index=sp.index)
+        for g in ["여성", "남성"]:
+            gpv[f"{g}지출"] = sp[g] if g in sp.columns else np.nan
+            gpv[f"{g}CPA"] = cp[g] if g in cp.columns else np.nan
+        gpv = gpv.reset_index()
+
     cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
             "지출", "구매_전체", "CPA", "CTR", "CVR"]
     cfg = {
@@ -667,6 +698,10 @@ elif view == VIEWS[7]:
         "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
         "CTR": st.column_config.NumberColumn(format="%.2f%%"),
         "CVR": st.column_config.NumberColumn(format="%.2f%%"),
+        "여성지출": st.column_config.NumberColumn("여성지출(₩)", format="localized"),
+        "여성CPA": st.column_config.NumberColumn("여성CPA(₩)", format="localized"),
+        "남성지출": st.column_config.NumberColumn("남성지출(₩)", format="localized"),
+        "남성CPA": st.column_config.NumberColumn("남성CPA(₩)", format="localized"),
     }
 
     def show_group(code, title, hint):
@@ -682,6 +717,11 @@ elif view == VIEWS[7]:
         sub["지출"] = sub["지출"].round(0)
         sub["CPA"] = sub["CPA"].round(0)
         sub = sub.sort_values("지출", ascending=False).reset_index(drop=True)
+        if gpv is not None:                # 성별 지출·CPA(최근 30일) 컬럼 붙이기
+            sub = sub.merge(gpv, on="소재", how="left")
+            for gc in ["여성지출", "여성CPA", "남성지출", "남성CPA"]:
+                if gc in sub.columns:
+                    sub[gc] = sub[gc].round(0)
         st.dataframe(sub, use_container_width=True, hide_index=True, height=300, column_config=cfg)
 
     _cut = (max_date - pd.Timedelta(days=active_days)).date()
