@@ -115,7 +115,7 @@ def load_placement() -> pd.DataFrame:
               "purchase", "offline_purchase", "omni_purchase", "revenue"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    for c in ["window_since", "window_until", "publisher_platform",
+    for c in ["date", "campaign_name", "publisher_platform",
               "platform_position", "objective", "ad_id", "ad_name"]:
         if c in df.columns:
             df[c] = df[c].astype(str)

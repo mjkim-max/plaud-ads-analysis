@@ -63,7 +63,7 @@ CREATIVE_MAP_COLUMNS = ["광고이름", "소재", "분류방식"]
 TAB_META_PLACEMENT = "meta_지면"
 PLACEMENT_WINDOW_DAYS = int(os.environ.get("META_PLACEMENT_DAYS", "30"))
 META_PLACEMENT_COLUMNS = [
-    "window_since", "window_until", "publisher_platform", "platform_position",
+    "date", "campaign_name", "publisher_platform", "platform_position",
     "objective", "ad_id", "ad_name",
     "spend", "impressions", "clicks", "link_clicks",
     "purchase", "offline_purchase", "omni_purchase", "revenue",

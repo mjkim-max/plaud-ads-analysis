@@ -24,9 +24,10 @@ def fetch_placement(since: str, until: str) -> list[dict]:
     params = {
         "level": "ad",
         "breakdowns": "publisher_platform,platform_position",  # 지면 분해
-        "time_range": f'{{"since":"{since}","until":"{until}"}}',  # time_increment 없음 = 윈도 집계
+        "time_increment": 1,                                    # 일별 (지면 자가경쟁 분석용)
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
         "fields": ",".join([
-            "campaign_name", "objective", "ad_id", "ad_name",
+            "date_start", "campaign_name", "objective", "ad_id", "ad_name",
             "spend", "impressions", "clicks", "inline_link_clicks",
             "actions", "action_values",
         ]),
@@ -53,8 +54,8 @@ def transform(raw: list[dict], since: str, until: str) -> pd.DataFrame:
         clk = _num(row.get("clicks"))
         actions = row.get("actions")
         out.append({
-            "window_since": since,
-            "window_until": until,
+            "date": row.get("date_start", ""),
+            "campaign_name": row.get("campaign_name", ""),
             "publisher_platform": row.get("publisher_platform", ""),
             "platform_position": row.get("platform_position", ""),
             "objective": row.get("objective", ""),

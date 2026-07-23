@@ -744,9 +744,9 @@ elif view == VIEWS[8]:
         st.info("`meta_지면` 탭이 아직 없습니다. 수집 워크플로(collect-ads-data)가 다음 실행(매일 06:00 KST) 후 생성해요.\n\n"
                 "지금 바로 채우려면 GitHub Actions에서 **collect-ads-data → Run workflow** 를 수동 실행하세요.")
     else:
-        w0 = pl["window_since"].iloc[0] if "window_since" in pl.columns else "?"
-        w1 = pl["window_until"].iloc[0] if "window_until" in pl.columns else "?"
-        st.caption(f"윈도: {w0} ~ {w1} · 지면 = publisher_platform × platform_position · 구매목표 캠페인만")
+        w0 = pl["date"].min() if "date" in pl.columns else "?"
+        w1 = pl["date"].max() if "date" in pl.columns else "?"
+        st.caption(f"기간: {w0} ~ {w1} · 지면 = publisher_platform × platform_position · 구매목표 캠페인만")
 
         pl = pl.copy()
         pl["지면"] = pl["publisher_platform"].str.strip() + " / " + pl["platform_position"].str.strip()
