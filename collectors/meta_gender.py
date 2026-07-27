@@ -6,6 +6,7 @@
 실행:  python -m collectors.meta_gender
 필요 env: META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, PLAUD_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_JSON
 """
+import os
 import time
 from datetime import date, timedelta
 
@@ -75,8 +76,10 @@ def transform(raw: list[dict], since: str, until: str) -> pd.DataFrame:
 
 def run() -> int:
     until = date.today().isoformat()
-    since = (date.today() - timedelta(days=config.GENDER_WINDOW_DAYS)).isoformat()
-    print(f"[gender] 성별×연령 수집: {since} ~ {until} (윈도 집계)")
+    # META_GENDER_SINCE 있으면 그 날부터(전체 기간), 없으면 최근 N일
+    since = os.environ.get("META_GENDER_SINCE", "").strip() or \
+        (date.today() - timedelta(days=config.GENDER_WINDOW_DAYS)).isoformat()
+    print(f"[gender] 성별×연령 수집: {since} ~ {until} (기간 집계)")
     raw = fetch_gender(since, until)
     print(f"[gender] 원본 {len(raw)}행 (ad×성별×연령)")
     df = transform(raw, since, until)

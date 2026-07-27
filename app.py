@@ -665,9 +665,9 @@ elif view == VIEWS[7]:
     if not gdf.empty:
         gdf = gdf[gdf["소재"].isin(c["소재"])]
     has_gender = not gdf.empty
-    show_gender = st.checkbox("성별 예산·CPA 표시 (최근 30일 스냅샷)", value=has_gender,
+    show_gender = st.checkbox("성별 예산·CPA 표시 (전체 기간)", value=has_gender,
                               disabled=not has_gender,
-                              help="meta_성별 탭 기준. 성별×연령 요약 + 각 소재 표에 여성/남성 지출·CPA 컬럼 추가.")
+                              help="meta_성별 탭(2025-01~ 전체) 기준. 성별×연령 요약 + 각 소재 표에 여성/남성 지출·CPA 컬럼 추가.")
     if not has_gender:
         st.caption("성별 데이터 없음 — collect 워크플로 실행 후 `meta_성별` 탭 생성되면 표시됩니다.")
     elif show_gender:

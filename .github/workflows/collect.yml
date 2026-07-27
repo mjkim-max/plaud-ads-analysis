@@ -46,13 +46,14 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python -m collectors.meta_placement
 
-      - name: Collect Meta gender×age snapshot → Sheets
+      - name: Collect Meta gender×age (전체 기간) → Sheets
         continue-on-error: true
         env:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
           PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          META_GENDER_SINCE: "2025-01-01"
         run: python -m collectors.meta_gender
 
       - name: Collect Meta placement YEAR aggregate → Sheets
