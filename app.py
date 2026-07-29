@@ -690,6 +690,28 @@ elif view == VIEWS[7]:
             gpv[f"{g}CPA"] = cp[g] if g in cp.columns else np.nan
         gpv = gpv.reset_index()
 
+    # ── 🎯 소재별 성별×연령 컨디션 (전체 기간) — 별도 섹션 ──
+    st.divider()
+    st.markdown("### 🎯 소재별 성별×연령 컨디션 (전체 기간)")
+    st.caption("소재를 선택하면 그 소재가 어느 성별×연령에서 잘 나오는지 — 구매·지출·CPA. `meta_성별` 탭(2025-01~) 기준. 예전 소재도 조회됨.")
+    _gall = dl.load_gender()
+    if _gall.empty:
+        st.caption("성별 데이터 없음 — collect 워크플로 실행 후 `meta_성별` 탭 생성되면 표시됩니다.")
+    else:
+        _sojs = sorted(_gall["소재"].dropna().astype(str).unique())
+        _sel = st.selectbox("소재 선택", _sojs, key="soj_gender_age")
+        _one = _gall[_gall["소재"].astype(str) == _sel]
+        _tbl = (_one.groupby(["성별", "age"])
+                    .agg(구매=("omni_purchase", "sum"), 지출=("spend", "sum")).reset_index())
+        _tbl["CPA"] = (_tbl["지출"] / _tbl["구매"]).where(_tbl["구매"] > 0).round(0)
+        _tbl = _tbl.sort_values("지출", ascending=False).reset_index(drop=True)
+        st.caption(f"**{_sel}** · 총지출 {_one['spend'].sum():,.0f}원 · 총구매 {int(_one['omni_purchase'].sum())}건")
+        st.dataframe(_tbl, use_container_width=True, hide_index=True, height=380,
+                     column_config={
+                         "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
+                         "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
+                     })
+
     cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
             "지출", "구매_전체", "CPA", "CTR", "CVR"]
     cfg = {
