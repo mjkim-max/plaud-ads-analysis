@@ -183,7 +183,7 @@ cs = creative_summary(df)
 st.title("📊 PLAUD 광고 성과 대시보드")
 st.caption(f"소재 단위 지표 · 데이터 {dmin} ~ {dmax} (매일 자동 갱신)")
 
-VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(4분류)", "⑨ 지면 분석(이미지 vs 영상)"]
+VIEWS = ["① 개요", "② 월별 소재 컨디션", "③ 제작월별 진단", "④ 구글×메타 교차분석", "⑤ 제작×집행 매트릭스", "⑥ 채널 매출·ROAS", "⑦ 보고(월별 종합)", "⑧ 소재 상태(4분류)", "⑨ 지면 분석(이미지 vs 영상)", "⑩ 소재별 성별×연령"]
 # 셀렉터에서 숨길 화면(코드/인덱스는 유지 — 아래 elif가 VIEWS[N]을 참조하므로 목록은 그대로 둠)
 HIDDEN_VIEWS = {VIEWS[0], VIEWS[3], VIEWS[6]}  # ① 개요 · ④ 구글×메타 교차분석 · ⑦ 보고(월별 종합)
 VISIBLE_VIEWS = [v for v in VIEWS if v not in HIDDEN_VIEWS]
@@ -690,28 +690,6 @@ elif view == VIEWS[7]:
             gpv[f"{g}CPA"] = cp[g] if g in cp.columns else np.nan
         gpv = gpv.reset_index()
 
-    # ── 🎯 소재별 성별×연령 컨디션 (전체 기간) — 별도 섹션 ──
-    st.divider()
-    st.markdown("### 🎯 소재별 성별×연령 컨디션 (전체 기간)")
-    st.caption("소재를 선택하면 그 소재가 어느 성별×연령에서 잘 나오는지 — 구매·지출·CPA. `meta_성별` 탭(2025-01~) 기준. 예전 소재도 조회됨.")
-    _gall = dl.load_gender()
-    if _gall.empty:
-        st.caption("성별 데이터 없음 — collect 워크플로 실행 후 `meta_성별` 탭 생성되면 표시됩니다.")
-    else:
-        _sojs = sorted(_gall["소재"].dropna().astype(str).unique())
-        _sel = st.selectbox("소재 선택", _sojs, key="soj_gender_age")
-        _one = _gall[_gall["소재"].astype(str) == _sel]
-        _tbl = (_one.groupby(["성별", "age"])
-                    .agg(구매=("omni_purchase", "sum"), 지출=("spend", "sum")).reset_index())
-        _tbl["CPA"] = (_tbl["지출"] / _tbl["구매"]).where(_tbl["구매"] > 0).round(0)
-        _tbl = _tbl.sort_values("지출", ascending=False).reset_index(drop=True)
-        st.caption(f"**{_sel}** · 총지출 {_one['spend'].sum():,.0f}원 · 총구매 {int(_one['omni_purchase'].sum())}건")
-        st.dataframe(_tbl, use_container_width=True, hide_index=True, height=380,
-                     column_config={
-                         "지출": st.column_config.NumberColumn("지출(₩)", format="localized"),
-                         "CPA": st.column_config.NumberColumn("CPA(₩)", format="localized"),
-                     })
-
     cols = ["소재", "최초집행", "최종집행", "수명일", "광고수", "캠페인수", "노출",
             "지출", "구매_전체", "CPA", "CTR", "CVR"]
     cfg = {
@@ -815,3 +793,39 @@ elif view == VIEWS[8]:
 
         st.caption("판정: ②에서 지면 내 이미지/영상 CPM 격차가 작고(≈1.0) ③에서 이미지가 싼 지면에 몰려 있으면 "
                    "→ **구좌 믹스 효과(구좌빨)**. ②에서 같은 지면서도 이미지 CPM이 낮으면 → 메타 경매가 이미지를 우대.")
+
+# ─────────────────────────── ⑩ 소재별 성별×연령 ───────────────────────────
+elif view == VIEWS[9]:
+    st.subheader("소재별 성별×연령 (전체 기간)")
+    st.caption("소재를 선택하면 그 소재가 어느 성별×연령에서 잘 나오는지 — 전체·남성·여성 × 구매·지출·CPA. "
+               "`meta_성별` 탭(2025-01~) 기준. 예전 소재도 조회됨.")
+    gall = dl.load_gender()
+    if gall.empty:
+        st.info("성별 데이터 없음 — collect 워크플로 실행 후 `meta_성별` 탭 생성되면 표시됩니다.")
+    else:
+        sojs = sorted(gall["소재"].dropna().astype(str).unique())
+        sel = st.selectbox("소재 선택", sojs, key="soj_ga_view")
+        one = gall[gall["소재"].astype(str) == sel]
+        AGES = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+
+        def _blk(d):
+            g = (d.groupby("age").agg(구매=("omni_purchase", "sum"), 지출=("spend", "sum"))
+                 if not d.empty else pd.DataFrame(columns=["구매", "지출"]))
+            g["CPA"] = (g["지출"] / g["구매"]).where(g["구매"] > 0) if not g.empty else g.get("CPA")
+            return g[["구매", "지출", "CPA"]]
+
+        blocks = {"전체": _blk(one),
+                  "남성": _blk(one[one["성별"] == "남성"]),
+                  "여성": _blk(one[one["성별"] == "여성"])}
+        mat = pd.concat(blocks, axis=1)
+        order = [a for a in AGES if a in mat.index] + [a for a in mat.index if a not in AGES]
+        mat = mat.reindex(order)
+        tot = {}
+        for k, v in blocks.items():
+            b = v["구매"].sum(); s = v["지출"].sum()
+            tot[(k, "구매")] = b; tot[(k, "지출")] = s; tot[(k, "CPA")] = (s / b) if b > 0 else np.nan
+        mat.loc["합계"] = pd.Series(tot)
+        mat = mat.reindex(["합계"] + order)
+        st.caption(f"**{sel}** · 총지출 {one['spend'].sum():,.0f}원 · 총구매 {int(one['omni_purchase'].sum())}건")
+        fmt = {(k, m): "{:,.0f}" for k in ["전체", "남성", "여성"] for m in ["구매", "지출", "CPA"]}
+        st.dataframe(mat.style.format(fmt, na_rep="-"), use_container_width=True, height=320)
