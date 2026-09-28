@@ -177,8 +177,8 @@ def run(since: str = "", until: str = "") -> int:
     print(f"[meta] 최종 적재 대상 행: {len(df)}")
 
     # 광고이름 → 소재(정규명) 매핑. 신규 광고는 자동분류 후 소재매핑 탭에 등록.
-    mp = creative_mapping.load_map()
-    df["소재"], new_rows = creative_mapping.assign(df["ad_name"].tolist(), mp)
+    mp, known = creative_mapping.load_map_and_known()
+    df["소재"], new_rows = creative_mapping.assign(df["ad_name"].tolist(), mp, known)
     if new_rows:
         sheets_io.append_rows(new_rows, config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
         print(f"[meta] 신규 소재매핑 {len(new_rows)}건 자동등록(분류방식=자동)")

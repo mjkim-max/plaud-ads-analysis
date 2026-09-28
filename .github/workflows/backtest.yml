@@ -1,0 +1,24 @@
+name: backtest-mapping
+
+# 소재매핑 자동분류 백테스트 (읽기 전용 — 시트를 수정하지 않음). 수동 실행 전용.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r collectors/requirements.txt
+
+      - name: Backtest creative mapping
+        env:
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m collectors.backtest_mapping
