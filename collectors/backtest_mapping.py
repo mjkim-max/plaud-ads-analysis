@@ -7,7 +7,7 @@
 실행: PLAUD_SHEET_ID=... GOOGLE_SERVICE_ACCOUNT_JSON=... python -m collectors.backtest_mapping
 """
 from collectors import config, creative_mapping, sheets_io
-from collectors.creative_mapping import _norm, normalize, smart_guess
+from collectors.creative_mapping import _build_known, _norm, normalize, smart_guess
 
 
 def main() -> None:
@@ -19,9 +19,7 @@ def main() -> None:
         how = str(r.get("분류방식", "")).strip()
         if ad and so and how in ("수동", "자동"):
             rows.append((ad, so, how))
-    known = {}
-    for _, so, _h in rows:
-        known.setdefault(_norm(so), so)
+    known = _build_known(so for _, so, _h in rows)
     print(f"정답 행: {len(rows)} (수동 {sum(1 for r in rows if r[2]=='수동')} · "
           f"자동 {sum(1 for r in rows if r[2]=='자동')}) · distinct 소재 {len(known)}")
 

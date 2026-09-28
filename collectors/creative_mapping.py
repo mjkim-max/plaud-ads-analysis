@@ -53,6 +53,24 @@ def _strip(ad_name: str) -> str:
     return _COPY_SUFFIX.sub("", s).strip()
 
 
+def _build_known(sojs) -> dict:
+    """소재명 목록 → {_norm(소재): 소재} 대조 사전.
+    '[이미지] 금붕어' 처럼 포맷 접두어가 붙은 소재는 접두어 뗀 키도 추가해
+    광고이름 '금붕어'가 원래 소재로 매핑되게 한다. (접두어 없는 원형이 항상 우선)"""
+    known, stripped = {}, {}
+    for so in sojs:
+        so = str(so).strip()
+        if not so:
+            continue
+        known.setdefault(_norm(so), so)
+        bare = _PREFIX_TAG.sub("", so).strip()
+        if bare and bare != so:
+            stripped.setdefault(_norm(bare), so)
+    for k, v in stripped.items():
+        known.setdefault(k, v)
+    return known
+
+
 def smart_guess(ad_name: str, known: dict | None = None):
     """광고이름 → (소재 추정, 기존소재 매칭 여부).
     known: {_norm(소재): 소재} — 기존에 등록된 소재명 사전.
@@ -98,7 +116,7 @@ def load_map_and_known():
     """소재매핑 탭 → ({광고이름: 소재}, {_norm(소재): 소재}).
     known 사전에는 분류방식='제외' 행의 소재(정크명)는 넣지 않는다."""
     df = sheets_io.read_tab(config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
-    m, known = {}, {}
+    m, sojs = {}, []
     for _, r in df.iterrows():
         ad = str(r.get("광고이름", "")).strip()
         so = str(r.get("소재", "")).strip()
@@ -106,8 +124,8 @@ def load_map_and_known():
         if ad and so:
             m[ad] = so
             if how != "제외":
-                known.setdefault(_norm(so), so)
-    return m, known
+                sojs.append(so)
+    return m, _build_known(sojs)
 
 
 def assign(ad_names, existing: dict, known: dict | None = None):
@@ -115,10 +133,7 @@ def assign(ad_names, existing: dict, known: dict | None = None):
     반환: (소재 리스트, 신규 등록행 리스트[분류방식='자동']).
     known 이 None 이면 existing 의 소재값들로 사전을 만든다."""
     if known is None:
-        known = {}
-        for so in existing.values():
-            if so:
-                known.setdefault(_norm(so), so)
+        known = _build_known(existing.values())
     resolved, new_rows, seen_new = [], [], set()
     for ad in ad_names:
         ad = str(ad).strip()
