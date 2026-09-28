@@ -71,28 +71,26 @@ def _build_known(sojs) -> dict:
     return known
 
 
+def _match_known(text_norm: str, tokset: set, known: dict) -> str:
+    """가장 긴 매칭 소재를 반환. 한 글자 소재는 토큰 일치일 때만."""
+    best = ""
+    for k in known:
+        if len(k) >= 2:
+            if k in text_norm and len(k) > len(best):
+                best = k
+        elif k in tokset and len(k) > len(best):
+            best = k
+    return best
+
+
 def smart_guess(ad_name: str, known: dict | None = None):
     """광고이름 → (소재 추정, 기존소재 매칭 여부).
     known: {_norm(소재): 소재} — 기존에 등록된 소재명 사전.
     """
     s = _strip(ad_name)
     toks = [t for t in re.split(r"[_\s]+", s) if t]
-    full = _norm(s)
 
-    # ① 기존 소재명 대조 — 가장 긴 매칭 우선. 한 글자 소재는 토큰 일치일 때만.
-    if known:
-        tokset = {_norm(t) for t in toks}
-        best = ""
-        for k in known:
-            if len(k) >= 2:
-                if k in full and len(k) > len(best):
-                    best = k
-            elif k in tokset and len(k) > len(best):
-                best = k
-        if best:
-            return known[best], True
-
-    # ② 토큰 파싱 — 구조 토큰 제거 후 잔여를 소재명으로
+    # 구조 토큰(날짜·계정코드·타겟 라벨) 제거한 핵심 토큰
     core = []
     for i, t in enumerate(toks):
         if i == 0 and _DATE_TOK.match(t):
@@ -102,6 +100,16 @@ def smart_guess(ad_name: str, known: dict | None = None):
         if _STRUCT_TOK.match(t):
             continue
         core.append(t)
+
+    # ① 기존 소재명 대조 — 핵심 토큰 문자열 우선, 없으면 원문 전체로 재시도
+    #   ('리타게팅_0원'에서 구조 토큰 '리타게팅'이 소재로 오매칭되는 것 방지)
+    if known:
+        for text, tokens in ((("".join(core)), core), (s, toks)):
+            best = _match_known(_norm(text), {_norm(t) for t in tokens}, known)
+            if best:
+                return known[best], True
+
+    # ② 파싱 폴백 — 핵심 토큰 잔여를 소재명으로 제안
     guess = "".join(core).strip()
     return (guess or s), False
 

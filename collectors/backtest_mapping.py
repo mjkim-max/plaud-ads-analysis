@@ -24,20 +24,26 @@ def main() -> None:
           f"자동 {sum(1 for r in rows if r[2]=='자동')}) · distinct 소재 {len(known)}")
 
     old_ok = new_ok = 0
+    by_how = {"수동": [0, 0], "자동": [0, 0]}  # [맞춤, 전체]
     miss_new = []
     for ad, so, how in rows:
         t = _norm(so)
         if _norm(normalize(ad)) == t:
             old_ok += 1
         pred, matched = smart_guess(ad, known)
+        by_how[how][1] += 1
         if _norm(pred) == t:
             new_ok += 1
+            by_how[how][0] += 1
         else:
             miss_new.append((how, ad, so, pred, matched))
 
     n = len(rows)
     print(f"구 normalize : {old_ok}/{n} = {old_ok/n*100:.1f}%")
     print(f"신 smart_guess: {new_ok}/{n} = {new_ok/n*100:.1f}%")
+    for how, (ok, tot) in by_how.items():
+        if tot:
+            print(f"  └ {how} 행: {ok}/{tot} = {ok/tot*100:.1f}%")
     print(f"\n신규 로직 불일치 {len(miss_new)}건 (최대 40건 표시):")
     for how, ad, so, pred, matched in miss_new[:40]:
         tag = "대조" if matched else "파싱"
