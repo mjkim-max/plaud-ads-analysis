@@ -11,6 +11,15 @@ from collectors.creative_mapping import _build_known, _norm, normalize, smart_gu
 
 
 def main() -> None:
+    # 진단: 어느 스프레드시트의 어느 탭을 보고 있는지
+    ws = sheets_io._worksheet(config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
+    print(f"[diag] spreadsheet={ws.spreadsheet.title!r} sheet_id={config.SHEET_ID[:8]}… "
+          f"tab={ws.title!r} grid_rows={ws.row_count}")
+    tail = ws.get_all_values()[-6:]
+    print("[diag] 마지막 6행:")
+    for row in tail:
+        print("   ", row[:3])
+
     df = sheets_io.read_tab(config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
     rows = []
     for _, r in df.iterrows():
