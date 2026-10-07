@@ -79,3 +79,12 @@ jobs:
           META_SINCE: ${{ inputs.since }}
           META_UNTIL: ${{ inputs.until }}
         run: python -m collectors.google_campaign_daily
+
+      - name: Collect NAVER search trend → Sheets
+        continue-on-error: true   # 네이버 미설정이어도 나머지 수집 유지
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m collectors.naver_searchtrend

@@ -1,0 +1,19 @@
+name: naver-trend
+# 네이버 검색어 트렌드 단독 실행 (테스트·백필용). 일상 수집은 collect.yml에 포함.
+on:
+  workflow_dispatch: {}
+jobs:
+  naver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r collectors/requirements.txt
+      - env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m collectors.naver_searchtrend
