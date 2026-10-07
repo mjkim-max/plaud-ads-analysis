@@ -1,0 +1,21 @@
+name: dump-tab
+on:
+  workflow_dispatch:
+    inputs:
+      tab:
+        description: "덤프할 탭 이름"
+        required: true
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r collectors/requirements.txt
+      - env:
+          PLAUD_SHEET_ID: ${{ secrets.PLAUD_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          DUMP_TAB: ${{ inputs.tab }}
+        run: python -m collectors.dump_tab
