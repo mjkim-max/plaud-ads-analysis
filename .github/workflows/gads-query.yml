@@ -11,6 +11,10 @@ on:
         description: "조회할 고객 ID (하이픈 없이). 비우면 PLAUD 기본 계정"
         required: false
         default: ""
+      login_customer_id:
+        description: "MCC ID. 비우면 PLAUD MCC, '-' 넣으면 MCC 없이 직접 접근"
+        required: false
+        default: ""
 
 jobs:
   query:
@@ -31,7 +35,7 @@ jobs:
           GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
           GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
           GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
-          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ inputs.login_customer_id || secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
           GOOGLE_ADS_CUSTOMER_ID: ${{ inputs.customer_id || secrets.GOOGLE_ADS_CUSTOMER_ID }}
           GADS_QUERY: ${{ inputs.query }}
         run: python -m collectors.gads_query
