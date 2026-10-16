@@ -1,0 +1,37 @@
+name: gads-set-urlsuffix
+
+# 캠페인 최종 URL 접미사 설정 (쓰기) — 수동 실행 전용
+on:
+  workflow_dispatch:
+    inputs:
+      campaign_id:
+        description: "캠페인 ID (하이픈 없이)"
+        required: true
+      url_suffix:
+        description: "최종 URL 접미사 (utm_source=...&utm_medium=...&utm_campaign=...)"
+        required: true
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Set final URL suffix
+        env:
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
+          GADS_CAMPAIGN_ID: ${{ inputs.campaign_id }}
+          GADS_URL_SUFFIX: ${{ inputs.url_suffix }}
+        run: python -m collectors.gads_set_urlsuffix
