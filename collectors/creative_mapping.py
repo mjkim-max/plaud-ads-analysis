@@ -136,6 +136,38 @@ def load_map_and_known():
     return m, _build_known(sojs)
 
 
+REVIEW_HEADERS = ["확인", "확인필요"]  # 소재매핑 D·E열
+
+
+def sync_review() -> tuple[int, int]:
+    """소재매핑 D(확인)·E(확인필요) 열 정리.
+    - D: 사람이 확인한 행은 'O'. 수동 행은 기본 'O'. 자동 행은 같은 소재명에 'O'가 있으면 'O'.
+      이미 들어 있는 D 값은 건드리지 않는다.
+    - E: 자동 행에만 수식 — 같은 소재명에 'O'가 하나라도 있으면 공란, 없으면 '확인필요'.
+      (D에 O를 치는 즉시 시트에서 바로 사라지게 수식으로 둔다)
+    반환: (자동 O 새로 표시한 행 수, 확인필요 행 수)."""
+    ws = sheets_io._worksheet(config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
+    vals = ws.get_all_values()
+    rows = [(r + [""] * 5)[:5] for r in vals[1:]]
+    for r in rows:
+        if r[0].strip() and not r[3].strip() and r[2].strip() == "수동":
+            r[3] = "O"
+    ok = {r[1].strip() for r in rows if r[3].strip().upper() == "O"}
+    n_auto_o = n_need = 0
+    for i, r in enumerate(rows, start=2):
+        auto = r[0].strip() and r[2].strip() == "자동"
+        if auto and not r[3].strip() and r[1].strip() in ok:
+            r[3] = "O"
+            n_auto_o += 1
+        r[4] = f'=IF(COUNTIFS($B:$B,B{i},$D:$D,"O"),"","확인필요")' if auto else ""
+        if auto and r[1].strip() not in ok:
+            n_need += 1
+    out = [REVIEW_HEADERS] + [[r[3], r[4]] for r in rows]
+    # 키워드 인자 — gspread 5(range, values)·6(values, range) 위치 순서가 반대
+    ws.update(range_name=f"D1:E{len(out)}", values=out, value_input_option="USER_ENTERED")
+    return n_auto_o, n_need
+
+
 def assign(ad_names, existing: dict, known: dict | None = None):
     """각 광고이름 → 소재. 매핑에 없으면 smart_guess 로 자동분류.
     반환: (소재 리스트, 신규 등록행 리스트[분류방식='자동']).

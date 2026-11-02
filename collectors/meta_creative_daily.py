@@ -182,6 +182,8 @@ def run(since: str = "", until: str = "") -> int:
     if new_rows:
         sheets_io.append_rows(new_rows, config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
         print(f"[meta] 신규 소재매핑 {len(new_rows)}건 자동등록(분류방식=자동)")
+    n_auto_o, n_need = creative_mapping.sync_review()
+    print(f"[meta] 소재매핑 확인열: 자동 O {n_auto_o}건 · 확인필요 {n_need}건")
     print(f"[meta] 소재매핑 적용: 수동 {len(mp)}건 기준, distinct 소재 {df['소재'].nunique()}개")
 
     total = sheets_io.upsert_by_date(
