@@ -53,11 +53,16 @@ def _strip(ad_name: str) -> str:
     return _COPY_SUFFIX.sub("", s).strip()
 
 
+_EXACT = "\x00"  # 접두어 뗀 키 표시 — 부분일치 금지, 전체일치만
+
+
 def _build_known(sojs) -> dict:
     """소재명 목록 → {_norm(소재): 소재} 대조 사전.
     '[이미지] 금붕어' 처럼 포맷 접두어가 붙은 소재는 접두어 뗀 키도 추가해
-    광고이름 '금붕어'가 원래 소재로 매핑되게 한다. (접두어 없는 원형이 항상 우선)"""
-    known, stripped = {}, {}
+    광고이름 '금붕어'가 원래 소재로 매핑되게 한다. (접두어 없는 원형이 항상 우선)
+    접두어 뗀 키는 전체일치만 허용 ('뎁프로2'가 '[이미지] 프로'로 붙는 것 방지).
+    '이름1' 소재는 숫자 뗀 키도 추가 — 숫자 없는 이름 = 1."""
+    known, stripped, base1 = {}, {}, {}
     for so in sojs:
         so = str(so).strip()
         if not so:
@@ -65,18 +70,26 @@ def _build_known(sojs) -> dict:
         known.setdefault(_norm(so), so)
         bare = _PREFIX_TAG.sub("", so).strip()
         if bare and bare != so:
-            stripped.setdefault(_norm(bare), so)
-    for k, v in stripped.items():
-        known.setdefault(k, v)
+            stripped.setdefault(_EXACT + _norm(bare), so)
+        m = re.match(r"^(.+?)1(\s*\((?:PP|NP|PL)\))?$", so)
+        if m and not _PREFIX_TAG.match(so):
+            base1.setdefault(_norm(m.group(1) + (m.group(2) or "")), so)
+    for d in (stripped, base1):
+        for k, v in d.items():
+            known.setdefault(k, v)
     return known
 
 
 def _match_known(text_norm: str, tokset: set, known: dict) -> str:
-    """가장 긴 매칭 소재를 반환. 한 글자 소재는 토큰 일치일 때만."""
+    """가장 긴 매칭 소재를 반환. 한 글자 소재는 토큰 일치일 때만.
+    뒤에 숫자가 이어지는 부분일치는 버린다 ('뎁프로'가 '뎁프로2'에 붙는 것 방지)."""
     best = ""
     for k in known:
-        if len(k) >= 2:
-            if k in text_norm and len(k) > len(best):
+        if k.startswith(_EXACT):
+            if k[1:] == text_norm and len(k) - 1 > len(best.lstrip(_EXACT)):
+                best = k
+        elif len(k) >= 2:
+            if len(k) > len(best) and re.search(re.escape(k) + r"(?!\d)", text_norm):
                 best = k
         elif k in tokset and len(k) > len(best):
             best = k
@@ -88,6 +101,8 @@ def smart_guess(ad_name: str, known: dict | None = None):
     known: {_norm(소재): 소재} — 기존에 등록된 소재명 사전.
     """
     s = _strip(ad_name)
+    # 버전 표기: '(기획)'·'_기획' → 2, '(기존)' → 1  ('뎁프로(기획)' → '뎁프로2')
+    s = re.sub(r"\(기존\)", "1", re.sub(r"[_\s]*\(?기획\)?", "2", s))
     toks = [t for t in re.split(r"[_\s]+", s) if t]
 
     # 구조 토큰(날짜·계정코드·타겟 라벨) 제거한 핵심 토큰
@@ -112,6 +127,51 @@ def smart_guess(ad_name: str, known: dict | None = None):
     # ② 파싱 폴백 — 핵심 토큰 잔여를 소재명으로 제안
     guess = "".join(core).strip()
     return (guess or s), False
+
+
+# 버전 표기: (기존) → 1, (기획) → 2. 계정 접미어 (PP)/(NP)/(PL)은 유지
+_VER = re.compile(r"^(.*?)\s*\((기존|기획)\)\s*(\((?:PP|NP|PL)\))?$")
+_ACCT_IN_AD = re.compile(r"(?:^|_)(PP|NP|PL)(?:_|$)")
+
+
+def canon(so: str, known: dict) -> str:
+    """추정 소재명 → 표준 소재명.
+    ① '(기존)'→'1', '(기획)'→'2'
+    ② 공백·괄호만 다른 기존 소재가 있으면 그 이름 ('릴쏸(PP)' → '릴쏸 (PP)')
+    ③ 숫자 없는 이름인데 '이름1' 소재가 있으면 '이름1' (숫자 없는 것 = 1)"""
+    m = _VER.match(so)
+    if m:
+        so = f"{m.group(1)}{'1' if m.group(2) == '기존' else '2'}" + (f" {m.group(3)}" if m.group(3) else "")
+    for k in (_norm(so), _EXACT + _norm(so), _norm(so + "1")):
+        if k in known:
+            return known[k]
+    return so
+
+
+def by_post(ad_name: str, post_of: dict, post_so: dict) -> str:
+    """광고의 게시물 ID가 확인(O)된 소재 하나에만 걸려 있으면 그 소재. 아니면 ''.
+    여러 소재에 걸리면 광고이름의 계정(PP/NP/PL)과 접미어가 맞는 소재로 좁힌다."""
+    cands = post_so.get(post_of.get(ad_name, ""), set())
+    if len(cands) > 1:
+        m = _ACCT_IN_AD.search(ad_name)
+        if m:
+            cands = {s for s in cands if s.endswith(f"({m.group(1)})")}
+    return next(iter(cands)) if len(cands) == 1 else ""
+
+
+def load_post_so(post_of: dict) -> dict:
+    """소재매핑의 확인(O) 행 → {게시물ID: {소재}}."""
+    df = sheets_io.read_tab(config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
+    out: dict[str, set] = {}
+    if "확인" not in df.columns:
+        return out
+    for _, r in df.iterrows():
+        ad, so = str(r.get("광고이름", "")).strip(), str(r.get("소재", "")).strip()
+        key = post_of.get(ad)
+        if key and so and str(r.get("확인", "")).strip().upper() == "O" \
+                and str(r.get("분류방식", "")).strip() != "제외":
+            out.setdefault(key, set()).add(so)
+    return out
 
 
 def load_map() -> dict:
@@ -168,8 +228,10 @@ def sync_review() -> tuple[int, int]:
     return n_auto_o, n_need
 
 
-def assign(ad_names, existing: dict, known: dict | None = None):
-    """각 광고이름 → 소재. 매핑에 없으면 smart_guess 로 자동분류.
+def assign(ad_names, existing: dict, known: dict | None = None,
+           post_of: dict | None = None, post_so: dict | None = None):
+    """각 광고이름 → 소재. 매핑에 없으면 자동분류:
+    ① 같은 게시물 ID의 확인(O) 소재 (by_post) → 없으면 ② smart_guess + canon.
     반환: (소재 리스트, 신규 등록행 리스트[분류방식='자동']).
     known 이 None 이면 existing 의 소재값들로 사전을 만든다."""
     if known is None:
@@ -180,7 +242,9 @@ def assign(ad_names, existing: dict, known: dict | None = None):
         if ad in existing:
             resolved.append(existing[ad])
         else:
-            so, _matched = smart_guess(ad, known)
+            so = by_post(ad, post_of or {}, post_so or {})
+            if not so:
+                so = canon(smart_guess(ad, known)[0], known)
             resolved.append(so)
             if ad not in seen_new:
                 new_rows.append({"광고이름": ad, "소재": so, "분류방식": "자동"})

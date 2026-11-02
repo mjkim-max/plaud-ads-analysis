@@ -58,6 +58,10 @@ META_CREATIVE_DAILY_COLUMNS = [
 # 소재매핑 탭: 광고이름 → 소재(정규명) + 분류방식(수동/자동)
 CREATIVE_MAP_COLUMNS = ["광고이름", "소재", "분류방식"]
 
+# 광고 → 게시물 ID 캐시. 같은 게시물 ID = 같은 소재 (새 ad_id만 Meta 조회)
+TAB_CREATIVE_POST = "소재_게시물ID"
+CREATIVE_POST_COLUMNS = ["ad_id", "광고이름", "게시물ID"]
+
 # 지면(placement) 스냅샷 — publisher_platform × platform_position 별 집계.
 # 매 실행마다 최근 N일 윈도로 덮어씀(스냅샷). 포맷(이미지/영상)별 지면 CPM 검증용.
 TAB_META_PLACEMENT = "meta_지면"

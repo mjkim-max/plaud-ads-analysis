@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import requests
 
-from collectors import config, creative_mapping, sheets_io
+from collectors import config, creative_mapping, creative_posts, sheets_io
 
 GRAPH = "https://graph.facebook.com"
 
@@ -178,7 +178,16 @@ def run(since: str = "", until: str = "") -> int:
 
     # 광고이름 → 소재(정규명) 매핑. 신규 광고는 자동분류 후 소재매핑 탭에 등록.
     mp, known = creative_mapping.load_map_and_known()
-    df["소재"], new_rows = creative_mapping.assign(df["ad_name"].tolist(), mp, known)
+    # 같은 게시물 ID = 같은 소재. 캐시에 없는 새 광고만 Meta 조회
+    try:
+        ads = dict(zip(df["ad_id"].astype(str), df["ad_name"].astype(str)))
+        post_of = creative_posts.sync(ads, _request)
+        post_so = creative_mapping.load_post_so(post_of)
+    except Exception as e:  # 게시물ID 실패해도 이름 규칙으로 계속
+        print(f"[posts] 게시물ID 매칭 건너뜀: {e}")
+        post_of, post_so = {}, {}
+    df["소재"], new_rows = creative_mapping.assign(
+        df["ad_name"].tolist(), mp, known, post_of, post_so)
     if new_rows:
         sheets_io.append_rows(new_rows, config.TAB_CREATIVE_MAP, config.CREATIVE_MAP_COLUMNS)
         print(f"[meta] 신규 소재매핑 {len(new_rows)}건 자동등록(분류방식=자동)")
