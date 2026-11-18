@@ -2,7 +2,11 @@ name: collect-ads-data
 
 on:
   schedule:
-    - cron: "0 21 * * *"   # 매일 06:00 KST (UTC 21:00)
+    # 아침 리포트(Fitten daily-ad-report 07:50 KST) 전에 끝나도록 새벽 3회.
+    # GitHub 예약은 정각에 몰려 3~6시간 늦게 시작됨(11/10~17 실측 09:30~12:30 KST) → 비정각·여러 번.
+    - cron: "17 16 * * *"  # 01:17 KST
+    - cron: "17 18 * * *"  # 03:17 KST
+    - cron: "17 20 * * *"  # 05:17 KST
   workflow_dispatch:        # 수동 실행 버튼 (백필용 날짜 입력)
     inputs:
       since:
@@ -13,6 +17,10 @@ on:
         description: "종료일 YYYY-MM-DD (비우면 오늘)"
         required: false
         default: ""
+
+concurrency:
+  group: collect-ads-data   # 새벽 3회가 겹치면 앞 실행 끝난 뒤 순서대로
+  cancel-in-progress: false
 
 jobs:
   meta:
